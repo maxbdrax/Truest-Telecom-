@@ -87,7 +87,7 @@ const App: React.FC = () => {
   const showPopup = (type: 'SUCCESS' | 'FAILED' | 'PERMISSION', message: string) => {
     setNotification({ show: true, type, message });
     if (type !== 'PERMISSION') {
-      setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 5000);
+      setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 6000);
     }
   };
 
@@ -95,16 +95,16 @@ const App: React.FC = () => {
     try {
       const { data, error } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
       if (error) {
-        if (error.message.includes('permission')) showPopup('PERMISSION', "ডাটাবেস এক্সেস পারমিশন দেয়া নেই। অ্যাডমিন প্যানেল থেকে 'GRANT' SQL কমান্ড রান করুন।");
+        if (error.message.includes('permission')) showPopup('PERMISSION', "আপনার সুপাবেজ ডাটাবেসে পারমিশন নেই। অ্যাডমিন প্যানেল থেকে SQL রান করুন।");
         else throw error;
         return;
       }
       if (data && data.password === user.password) {
         setCurrentUser(data);
         localStorage.setItem('trust_telecom_user', JSON.stringify(data));
-        showPopup('SUCCESS', "লগইন সফল!");
+        showPopup('SUCCESS', "লগইন সফল হয়েছে!");
       } else {
-        showPopup('FAILED', "ভুল তথ্য দিয়েছেন।");
+        showPopup('FAILED', "ভুল মোবাইল নাম্বার বা পাসওয়ার্ড দিয়েছেন।");
       }
     } catch (e: any) {
       showPopup('FAILED', e.message);
@@ -113,12 +113,15 @@ const App: React.FC = () => {
 
   const handleRegister = async (userData: Omit<User, 'id'>) => {
     try {
+      // Create a unique user ID
       const tempId = 'U' + Math.floor(100000 + Math.random() * 900000);
-      const { error: regError, data: newUser } = await supabase.from('users').insert([{ ...userData, id: tempId }]).select().single();
+      const userToInsert = { ...userData, id: tempId };
+
+      const { error: regError, data: newUser } = await supabase.from('users').insert([userToInsert]).select().single();
       
       if (regError) {
         if (regError.message.includes('permission')) {
-          showPopup('PERMISSION', "আপনার সুপাবেজে 'Permission Denied' এরর আসছে। এটি ঠিক করতে অ্যাডমিন প্যানেলের SQL রান করুন।");
+          showPopup('PERMISSION', "রেজিস্ট্রেশন করতে পারছে না কারণ ডাটাবেসে পারমিশন এরর আছে। অ্যাডমিন থেকে GRANT SQL রান করুন।");
         } else {
           showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${regError.message}`);
         }
@@ -128,11 +131,11 @@ const App: React.FC = () => {
       if (newUser) {
         setCurrentUser(newUser);
         localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
-        showPopup('SUCCESS', "অ্যাকাউন্ট তৈরি হয়েছে!");
+        showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে! স্বাগতম।");
         fetchData();
       }
     } catch (e: any) {
-      showPopup('FAILED', e.message);
+      showPopup('FAILED', `ত্রুটি: ${e.message}`);
     }
   };
 
@@ -154,9 +157,9 @@ const App: React.FC = () => {
               <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center ${notification.type === 'SUCCESS' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
                 {notification.type === 'SUCCESS' ? <CheckCircle size={48} /> : notification.type === 'PERMISSION' ? <ShieldAlert size={48} /> : <Database size={48} />}
               </div>
-              <h2 className="text-xl font-black mb-3">{notification.type === 'SUCCESS' ? 'সফল হয়েছে!' : 'সিকিউরিটি এরর!'}</h2>
-              <p className="text-gray-500 font-bold text-[10px] leading-relaxed mb-6">{notification.message}</p>
-              <button onClick={() => setNotification(prev => ({ ...prev, show: false }))} className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase">বন্ধ করুন</button>
+              <h2 className="text-xl font-black mb-3">{notification.type === 'SUCCESS' ? 'সফল হয়েছে!' : 'সিকিউরিটি সমস্যা!'}</h2>
+              <p className="text-gray-500 font-bold text-[11px] leading-relaxed mb-6">{notification.message}</p>
+              <button onClick={() => setNotification(prev => ({ ...prev, show: false }))} className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase shadow-lg">বন্ধ করুন</button>
             </div>
           </div>
         )}
@@ -174,7 +177,10 @@ const App: React.FC = () => {
                 currentUser.role === UserRole.ADMIN ? 
                 <AdminDashboard 
                   user={currentUser} users={users} services={services} settings={settings} offers={offers}
-                  onManageOffers={(action, offer) => action === 'ADD' ? supabase.from('offers').insert([offer]).then(fetchData) : supabase.from('offers').delete().eq('id', offer?.id).then(fetchData)} 
+                  onManageOffers={(action, offer) => {
+                     if(action === 'ADD') supabase.from('offers').insert([offer]).then(fetchData);
+                     else supabase.from('offers').delete().eq('id', offer?.id).then(fetchData);
+                  }} 
                   onUpdateSettings={(s) => supabase.from('app_settings').upsert([{id:1, ...settings, ...s}]).then(fetchData)} 
                   onUpdateUser={(id, data) => supabase.from('users').update(data).eq('id', id).then(fetchData)}
                   onToggleService={() => {}} 
