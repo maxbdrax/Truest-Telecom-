@@ -17,15 +17,15 @@ const Login: React.FC<Props> = ({ onLogin }) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Check for the specific admin credential requested
+    // Requested Admin Credentials: admin / 225588
     if (phone === 'admin' && password === '225588') {
       onLogin({
         id: 'admin_master',
         name: 'Master Admin',
         phone: 'admin',
         role: UserRole.ADMIN,
-        balance: 99999,
-        driveBalance: 99999,
+        balance: 999999,
+        driveBalance: 0,
         isBlocked: false
       });
       navigate('/dashboard');
@@ -33,11 +33,11 @@ const Login: React.FC<Props> = ({ onLogin }) => {
       return;
     }
 
-    // Otherwise standard user logic
+    // Standard User Login Logic
     if (phone && password) {
        onLogin({
         id: Math.random().toString(36).substring(7),
-        name: 'Account Owner',
+        name: 'Account User',
         phone: phone,
         role: UserRole.USER,
         balance: 0,
@@ -51,20 +51,20 @@ const Login: React.FC<Props> = ({ onLogin }) => {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-blue-900 to-blue-700 p-6 text-white">
-      <div className="mb-10 text-center animate-pulse">
-        <h1 className="text-4xl font-black mb-2 tracking-tight">Trust Telecom</h1>
-        <p className="text-blue-200 text-sm font-medium">সততাই আমাদের মূল লক্ষ্য</p>
+      <div className="mb-10 text-center">
+        <h1 className="text-4xl font-black mb-2 tracking-tight drop-shadow-lg">Trust Telecom</h1>
+        <p className="text-blue-200 text-sm font-bold">সততাই আমাদের মূল লক্ষ্য</p>
       </div>
       
       <form onSubmit={handleSubmit} className="w-full space-y-5">
         <div>
-          <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-2">Phone Number</label>
+          <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-2">Username or Phone</label>
           <input 
             type="text" 
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
             className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all font-bold"
-            placeholder="01XXXXXXXXX"
+            placeholder="আপনার ইউজারনেম দিন"
             required
           />
         </div>
@@ -82,15 +82,15 @@ const Login: React.FC<Props> = ({ onLogin }) => {
         <button 
           type="submit" 
           disabled={isLoading}
-          className="w-full bg-white text-blue-900 font-black py-4 rounded-2xl hover:bg-blue-50 transition-all shadow-2xl active:scale-95 disabled:opacity-50"
+          className="w-full bg-white text-blue-900 font-black py-4 rounded-2xl hover:bg-blue-50 transition-all shadow-2xl active:scale-95 disabled:opacity-50 text-lg"
         >
-          {isLoading ? 'প্রবেশ করা হচ্ছে...' : 'LOGIN'}
+          {isLoading ? 'লোড হচ্ছে...' : 'প্রবেশ করুন'}
         </button>
       </form>
       
       <div className="mt-8 text-center">
         <p className="text-sm text-blue-100 font-medium">
-          Don't have an account? <Link to="/register" className="font-black text-white underline underline-offset-4">Register Now</Link>
+          নতুন ইউজার? <Link to="/register" className="font-black text-white underline underline-offset-4">রেজিস্ট্রেশন করুন</Link>
         </p>
       </div>
     </div>

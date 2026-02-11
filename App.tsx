@@ -12,9 +12,9 @@ import ChatView from './components/ChatView';
 import { User, UserRole, Transaction, ServiceStatus, ChatMessage, Offer, Loan, Savings, AppSettings } from './types';
 import { CheckCircle, XCircle } from 'lucide-react';
 
-// Using the provided Supabase credentials from the prompt
-const SUPABASE_URL = 'https://etcnunymawlopmrwqhkn.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0Y251bnltYXdsb3BtcndxaGtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3NDcxNTAsImV4cCI6MjA4NTMyMzE1MH0.wPvxi7g-ZOLzrX51d5-2B4_LfqZgXw_1Otw0ZIts-_A';
+// Updated credentials for project: max999 (sxigiychhjxwisxbaamh)
+const SUPABASE_URL = 'https://sxigiychhjxwisxbaamh.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4aWdpeWNoaGp4d2lzeGJhYW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzOTE4NzcsImV4cCI6MjA4NTk2Nzg3N30.R3Yp5-K2HdQ2xm9r9VmSIc5QNHCzlnMHN4_NxUaRZIc';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 export interface ExtendedChatMessage extends ChatMessage {
@@ -55,31 +55,32 @@ const App: React.FC = () => {
     const fetchData = async () => {
       try {
         setIsLoading(true);
-        // Fetch users
-        const { data: userData, error: userError } = await supabase.from('users').select('*');
+        
+        // Parallel fetching to avoid waterfall delays
+        const [
+          { data: userData },
+          { data: txData },
+          { data: offerData },
+          { data: chatData },
+          { data: settingsData }
+        ] = await Promise.all([
+          supabase.from('users').select('*'),
+          supabase.from('transactions').select('*').order('date', { ascending: false }),
+          supabase.from('offers').select('*'),
+          supabase.from('chat_messages').select('*').order('timestamp', { ascending: true }),
+          supabase.from('app_settings').select('*').maybeSingle()
+        ]);
+
         if (userData) setUsers(userData);
-
-        // Fetch transactions
-        const { data: txData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
         if (txData) setTransactions(txData);
-
-        // Fetch offers
-        const { data: offerData } = await supabase.from('offers').select('*');
         if (offerData) setOffers(offerData);
-
-        // Fetch messages
-        const { data: chatData } = await supabase.from('chat_messages').select('*').order('timestamp', { ascending: true });
         if (chatData) setChatMessages(chatData);
-
-        // Fetch settings - handle potential single record error
-        const { data: settingsData } = await supabase.from('app_settings').select('*').maybeSingle();
         if (settingsData) setSettings(settingsData);
 
-        // Check Local Storage Login
+        // Persistent Login Check
         const savedUser = localStorage.getItem('trust_telecom_user');
         if (savedUser) {
           const parsed = JSON.parse(savedUser);
-          // Re-verify user still exists
           const { data: verifiedUser } = await supabase.from('users').select('*').eq('id', parsed.id).maybeSingle();
           if (verifiedUser) {
             setCurrentUser(verifiedUser);
@@ -103,16 +104,13 @@ const App: React.FC = () => {
   };
 
   const handleLogin = async (user: User) => {
-    // Check if user exists in Supabase
     const { data, error } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
     
     if (data) {
       setCurrentUser(data);
       localStorage.setItem('trust_telecom_user', JSON.stringify(data));
     } else {
-      // If user doesn't exist, we'll create them. 
-      // Note: In a real app, this should only happen during registration.
-      const { data: newUser, error: insError } = await supabase.from('users').insert([user]).select().single();
+      const { data: newUser } = await supabase.from('users').insert([user]).select().single();
       if (newUser) {
         setCurrentUser(newUser);
         setUsers(prev => [...prev, newUser]);
@@ -132,7 +130,7 @@ const App: React.FC = () => {
       date: new Date().toISOString(),
       status: 'PENDING'
     };
-    const { data, error } = await supabase.from('transactions').insert([newTx]).select().single();
+    const { data } = await supabase.from('transactions').insert([newTx]).select().single();
     if (data) {
       setTransactions([data, ...transactions]);
       showPopup('SUCCESS', "অনুরোধটি সফলভাবে পাঠানো হয়েছে। অপেক্ষ করুন।");
@@ -189,7 +187,8 @@ const App: React.FC = () => {
   };
 
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
-    const { data } = await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]).select().single();
+    const payload = { id: 1, ...settings, ...newSettings };
+    const { data } = await supabase.from('app_settings').upsert([payload]).select().single();
     if (data) {
       setSettings(data);
       showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে");
@@ -208,11 +207,10 @@ const App: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="max-w-md mx-auto min-h-screen bg-blue-900 flex items-center justify-center">
-        <div className="text-center">
-           <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
-           <p className="text-white font-bold">লোড হচ্ছে...</p>
-        </div>
+      <div className="max-w-md mx-auto min-h-screen bg-blue-900 flex flex-col items-center justify-center p-10">
+        <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mb-6"></div>
+        <h1 className="text-2xl font-black text-white mb-2">Trust Telecom</h1>
+        <p className="text-blue-200 font-medium">লোড হচ্ছে, দয়া করে অপেক্ষা করুন...</p>
       </div>
     );
   }
