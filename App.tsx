@@ -68,7 +68,7 @@ const App: React.FC = () => {
       if (results[1].status === 'fulfilled' && results[1].value.data) setTransactions(results[1].value.data);
       if (results[2].status === 'fulfilled' && results[2].value.data) setOffers(results[2].value.data);
       if (results[3].status === 'fulfilled' && results[3].value.data) setChatMessages(results[3].value.data);
-      if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data);
+      if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data || settings);
 
       const savedUserStr = localStorage.getItem('trust_telecom_user');
       if (savedUserStr) {
@@ -113,7 +113,6 @@ const App: React.FC = () => {
 
   const handleRegister = async (userData: Omit<User, 'id'>) => {
     try {
-      // Create a unique user ID
       const tempId = 'U' + Math.floor(100000 + Math.random() * 900000);
       const userToInsert = { ...userData, id: tempId };
 
@@ -137,6 +136,20 @@ const App: React.FC = () => {
     } catch (e: any) {
       showPopup('FAILED', `ত্রুটি: ${e.message}`);
     }
+  };
+
+  const handleManageOffers = async (action: 'ADD' | 'DELETE', offer?: Offer) => {
+    if (action === 'ADD' && offer) {
+      await supabase.from('offers').insert([offer]);
+    } else if (action === 'DELETE' && offer) {
+      await supabase.from('offers').delete().eq('id', offer.id);
+    }
+    fetchData();
+  };
+
+  const handleUpdateSettings = async (newSettings: Partial<AppSettings>) => {
+    await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]);
+    fetchData();
   };
 
   if (isLoading) {
@@ -177,11 +190,8 @@ const App: React.FC = () => {
                 currentUser.role === UserRole.ADMIN ? 
                 <AdminDashboard 
                   user={currentUser} users={users} services={services} settings={settings} offers={offers}
-                  onManageOffers={(action, offer) => {
-                     if(action === 'ADD') supabase.from('offers').insert([offer]).then(fetchData);
-                     else supabase.from('offers').delete().eq('id', offer?.id).then(fetchData);
-                  }} 
-                  onUpdateSettings={(s) => supabase.from('app_settings').upsert([{id:1, ...settings, ...s}]).then(fetchData)} 
+                  onManageOffers={handleManageOffers} 
+                  onUpdateSettings={handleUpdateSettings} 
                   onUpdateUser={(id, data) => supabase.from('users').update(data).eq('id', id).then(fetchData)}
                   onToggleService={() => {}} 
                   onLogout={() => {setCurrentUser(null); localStorage.removeItem('trust_telecom_user');}} 

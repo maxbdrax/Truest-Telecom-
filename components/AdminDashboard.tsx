@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
 import { User, ServiceStatus, Transaction, ChatMessage, AppSettings, Offer } from '../types';
-import { Users, CheckCircle, XCircle, Clock, Smartphone, LogOut, Settings, Edit3, Image, CreditCard, Plus, Trash2, Tag, ChevronRight, Send, Lock, User as UserIcon, Database, Copy, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Clock, Smartphone, LogOut, Settings, Edit3, Image, CreditCard, Plus, Trash2, Tag, ChevronRight, Send, Lock, User as UserIcon, Database, Copy, AlertTriangle, ShieldCheck, Phone } from 'lucide-react';
 import { ExtendedChatMessage } from '../App';
+import { OPERATORS } from '../constants';
 
 interface Props {
   user: User;
@@ -22,52 +23,46 @@ interface Props {
 }
 
 const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offers, onManageOffers, onUpdateSettings, onUpdateUser, onToggleService, onLogout, transactions, onUpdateTransaction, chatMessages, onAdminReply }) => {
-  const [activeTab, setActiveTab] = useState<'STATS' | 'REQUESTS' | 'USERS' | 'OFFERS' | 'CHAT' | 'DATABASE' | 'SETTINGS'>('STATS');
+  const [activeTab, setActiveTab] = useState<'STATS' | 'REQUESTS' | 'USERS' | 'OFFERS' | 'DATABASE' | 'SETTINGS'>('STATS');
   
-  const permissionFixSql = `-- ১. পাবলিক স্কিমার পারমিশন তালা খুলে দেওয়া (GRANT SQL)
+  // Settings State
+  const [tempSettings, setTempSettings] = useState<AppSettings>(settings);
+  
+  // Offer Add State
+  const [newOffer, setNewOffer] = useState<Partial<Offer>>({
+    type: 'DRIVE',
+    operator: 'gp',
+    title: '',
+    price: 0,
+    regularPrice: 0,
+    validity: '৩০ দিন'
+  });
+
+  const handleAddOffer = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOffer.title || !newOffer.price) return;
+    onManageOffers('ADD', {
+      ...newOffer,
+      id: Math.random().toString(36).substr(2, 9)
+    } as Offer);
+    setNewOffer({ ...newOffer, title: '', price: 0, regularPrice: 0 });
+    alert("অফার যোগ করা হয়েছে!");
+  };
+
+  const handleSaveSettings = () => {
+    onUpdateSettings(tempSettings);
+    alert("সেটিংস আপডেট করা হয়েছে!");
+  };
+
+  const permissionFixSql = `-- ১. পাবলিক স্কিমার পারমিশন তালা খুলে দেওয়া
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL ROUTINES IN SCHEMA public TO anon, authenticated, service_role;
-
--- ২. ভবিষ্যতে তৈরি হওয়া সব টেবিলের জন্য অটোমেটিক পারমিশন সেট করা
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
-ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
-
--- ৩. স্কিমা ক্যাশ রিফ্রেশ
-NOTIFY pgrst, 'reload schema';`;
-
-  const fullResetSql = `-- সতর্কবার্তা: এটি সব ডাটা মুছে ফেলবে এবং সব পারমিশন ঠিক করবে!
-DROP TABLE IF EXISTS transactions CASCADE;
-DROP TABLE IF EXISTS chat_messages CASCADE;
-DROP TABLE IF EXISTS offers CASCADE;
-DROP TABLE IF EXISTS app_settings CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
-
-CREATE TABLE users (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  phone TEXT UNIQUE NOT NULL,
-  "password" TEXT NOT NULL,
-  "payPassword" TEXT NOT NULL,
-  role TEXT DEFAULT 'USER',
-  balance NUMERIC DEFAULT 0,
-  "driveBalance" NUMERIC DEFAULT 0,
-  "isBlocked" BOOLEAN DEFAULT false
-);
-
-INSERT INTO users (id, name, phone, "password", "payPassword", role, balance)
-VALUES ('admin_master', 'Master Admin', '01987624041', '225588', '225588', 'ADMIN', 999999);
-
-GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated, service_role;
-
 NOTIFY pgrst, 'reload schema';`;
 
   const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
-    alert("কোড সফলভাবে কপি হয়েছে! এখন আপনার সুপাবেজ ড্যাশবোর্ডের SQL Editor এ গিয়ে এটি পেস্ট করে Run করুন।");
+    alert("কোড কপি হয়েছে!");
   };
 
   const pendingTransactions = transactions.filter(t => t.status === 'PENDING');
@@ -92,8 +87,8 @@ NOTIFY pgrst, 'reload schema';`;
           { id: 'REQUESTS', label: `Req (${pendingTransactions.length})`, icon: <Clock size={14}/> },
           { id: 'USERS', label: 'Users', icon: <Users size={14}/> },
           { id: 'OFFERS', label: 'Offers', icon: <Tag size={14}/> },
-          { id: 'DATABASE', label: 'GRANT SQL (Fix)', icon: <ShieldCheck size={14}/> },
           { id: 'SETTINGS', label: 'Settings', icon: <Settings size={14}/> },
+          { id: 'DATABASE', label: 'DB Fix', icon: <ShieldCheck size={14}/> },
         ].map((tab) => (
           <button 
             key={tab.id}
@@ -106,13 +101,168 @@ NOTIFY pgrst, 'reload schema';`;
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-20 bg-gray-50/50">
+      <div className="flex-1 overflow-y-auto pb-24 bg-gray-50/50">
+        
+        {/* Settings Tab */}
+        {activeTab === 'SETTINGS' && (
+          <div className="p-6 space-y-6">
+            <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100">
+              <h3 className="text-lg font-black text-gray-800 mb-6 flex items-center gap-2">
+                <CreditCard className="text-blue-900" size={20} /> পেমেন্ট নাম্বার পরিবর্তন
+              </h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">বিকাশ নাম্বার (Bkash)</label>
+                  <input 
+                    type="text" 
+                    value={tempSettings.bkashNumber} 
+                    onChange={e => setTempSettings({...tempSettings, bkashNumber: e.target.value})}
+                    className="w-full p-4 rounded-2xl bg-gray-50 border outline-none font-bold text-gray-700" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">নগদ নাম্বার (Nagad)</label>
+                  <input 
+                    type="text" 
+                    value={tempSettings.nagadNumber} 
+                    onChange={e => setTempSettings({...tempSettings, nagadNumber: e.target.value})}
+                    className="w-full p-4 rounded-2xl bg-gray-50 border outline-none font-bold text-gray-700" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">রকেট নাম্বার (Rocket)</label>
+                  <input 
+                    type="text" 
+                    value={tempSettings.rocketNumber} 
+                    onChange={e => setTempSettings({...tempSettings, rocketNumber: e.target.value})}
+                    className="w-full p-4 rounded-2xl bg-gray-50 border outline-none font-bold text-gray-700" 
+                  />
+                </div>
+                
+                <button 
+                  onClick={handleSaveSettings}
+                  className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl active:scale-95 transition-all mt-4"
+                >
+                  আপডেট সেভ করুন
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Offers Tab */}
+        {activeTab === 'OFFERS' && (
+          <div className="p-6 space-y-6">
+            <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100">
+              <h3 className="text-lg font-black text-gray-800 mb-6">নতুন অফার এড করুন</h3>
+              <form onSubmit={handleAddOffer} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">টাইপ</label>
+                    <select 
+                      value={newOffer.type} 
+                      onChange={e => setNewOffer({...newOffer, type: e.target.value as any})}
+                      className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    >
+                      <option value="DRIVE">ড্রাইভ প্যাক</option>
+                      <option value="REGULAR">রেগুলার প্যাক</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">অপারেটর</label>
+                    <select 
+                      value={newOffer.operator} 
+                      onChange={e => setNewOffer({...newOffer, operator: e.target.value})}
+                      className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    >
+                      {OPERATORS.map(op => <option key={op.id} value={op.id}>{op.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">অফার নাম (যেমন: ৩০ জিবি + ৭০০ মিনিট)</label>
+                  <input 
+                    type="text" 
+                    value={newOffer.title} 
+                    onChange={e => setNewOffer({...newOffer, title: e.target.value})}
+                    className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">অফার মূল্য</label>
+                    <input 
+                      type="number" 
+                      value={newOffer.price || ''} 
+                      onChange={e => setNewOffer({...newOffer, price: parseFloat(e.target.value)})}
+                      className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">রেগুলার মূল্য</label>
+                    <input 
+                      type="number" 
+                      value={newOffer.regularPrice || ''} 
+                      onChange={e => setNewOffer({...newOffer, regularPrice: parseFloat(e.target.value)})}
+                      className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">মেয়াদ</label>
+                    <input 
+                      type="text" 
+                      value={newOffer.validity} 
+                      onChange={e => setNewOffer({...newOffer, validity: e.target.value})}
+                      className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    />
+                  </div>
+                </div>
+
+                <button type="submit" className="w-full bg-blue-900 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2">
+                  <Plus size={16}/> এড করুন
+                </button>
+              </form>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-800 px-2 uppercase tracking-widest">বর্তমান অফারসমূহ ({offers.length})</h3>
+              {offers.map(offer => (
+                <div key={offer.id} className="bg-white p-4 rounded-2xl border flex justify-between items-center shadow-sm">
+                   <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-black text-[10px] ${OPERATORS.find(o => o.id === offer.operator)?.color || 'bg-gray-400'}`}>
+                         {offer.operator.toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-gray-800">{offer.title}</p>
+                        <p className="text-[9px] text-gray-400 font-bold">{offer.type} | {offer.validity}</p>
+                      </div>
+                   </div>
+                   <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        <p className="text-sm font-black text-blue-900">৳{offer.price}</p>
+                        <p className="text-[9px] text-gray-300 font-bold line-through">৳{offer.regularPrice}</p>
+                      </div>
+                      <button onClick={() => onManageOffers('DELETE', offer)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
+                        <Trash2 size={18} />
+                      </button>
+                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'DATABASE' && (
           <div className="p-6 space-y-6">
              <div className="bg-white p-6 rounded-[32px] shadow-lg border border-green-100">
                 <div className="flex items-center space-x-3 mb-4">
                   <ShieldCheck className="text-green-600" size={24} />
-                  <h3 className="text-lg font-black text-green-700">১. পারমিশন ঠিক করুন (GRANT SQL)</h3>
+                  <h3 className="text-lg font-black text-green-700">পারমিশন ঠিক করুন (GRANT SQL)</h3>
                 </div>
                 <p className="text-[11px] font-bold text-gray-500 mb-4 leading-relaxed">আপনার যদি 'Permission Denied' এরর আসে তবে এই কোডটি কপি করে সুপাবেজে রান করুন। এটি ডাটা মুছে দিবে না।</p>
                 <div className="bg-gray-900 p-4 rounded-2xl mb-4 overflow-hidden border-2 border-gray-800 shadow-inner">
@@ -120,17 +270,6 @@ NOTIFY pgrst, 'reload schema';`;
                 </div>
                 <button onClick={() => copyToClipboard(permissionFixSql)} className="w-full bg-green-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
                    <Copy size={16}/> GRANT SQL কপি করুন
-                </button>
-             </div>
-
-             <div className="bg-white p-6 rounded-[32px] shadow-lg border border-red-100">
-                <div className="flex items-center space-x-3 mb-4">
-                  <AlertTriangle className="text-red-600" size={24} />
-                  <h3 className="text-lg font-black text-red-700">২. সম্পূর্ণ মাস্টার ফিক্স (Master Fix)</h3>
-                </div>
-                <p className="text-[11px] font-bold text-gray-500 mb-4 leading-relaxed">যদি কোনো কিছুই কাজ না করে বা রেজিস্ট্রেশন ব্যর্থ হয়, তবে এটি রান করুন। এটি সব টেবিল মুছে নতুন করে নিখুঁতভাবে তৈরি করবে।</p>
-                <button onClick={() => copyToClipboard(fullResetSql)} className="w-full bg-red-600 text-white py-4 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all">
-                   <Database size={16}/> মাস্টার ফিক্স কোড কপি করুন
                 </button>
              </div>
           </div>
