@@ -56,7 +56,6 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         
-        // Parallel fetching with error trapping for each
         const results = await Promise.allSettled([
           supabase.from('users').select('*'),
           supabase.from('transactions').select('*').order('date', { ascending: false }),
@@ -65,18 +64,15 @@ const App: React.FC = () => {
           supabase.from('app_settings').select('*').maybeSingle()
         ]);
 
-        // Process results
         if (results[0].status === 'fulfilled' && results[0].value.data) setUsers(results[0].value.data);
         if (results[1].status === 'fulfilled' && results[1].value.data) setTransactions(results[1].value.data);
         if (results[2].status === 'fulfilled' && results[2].value.data) setOffers(results[2].value.data);
         if (results[3].status === 'fulfilled' && results[3].value.data) setChatMessages(results[3].value.data);
         if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data);
 
-        // Persistent Login Check
         const savedUserStr = localStorage.getItem('trust_telecom_user');
         if (savedUserStr) {
           const parsed = JSON.parse(savedUserStr);
-          // Check if user still exists in the fetched list
           const verifiedUser = (results[0].status === 'fulfilled' ? results[0].value.data : [])?.find((u: User) => u.id === parsed.id);
           if (verifiedUser) {
             setCurrentUser(verifiedUser);
@@ -86,7 +82,7 @@ const App: React.FC = () => {
         }
       } catch (err: any) {
         console.error("Critical initialization error:", err);
-        setError("সিস্টেম লোড করতে সমস্যা হচ্ছে। অনুগ্রহ করে আপনার নেটওয়ার্ক চেক করুন।");
+        setError("সিস্টেম লোড করতে সমস্যা হচ্ছে। অনুগ্রহ করে আপনার ইন্টারনেট সংযোগ পরীক্ষা করুন।");
       } finally {
         setIsLoading(false);
       }
@@ -103,6 +99,8 @@ const App: React.FC = () => {
   const handleLogin = async (user: User) => {
     try {
       const { data, error: loginError } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
+      if (loginError) throw loginError;
+
       if (data) {
         if (user.password && data.password && data.password !== user.password) {
           showPopup('FAILED', "পাসওয়ার্ড ভুল।");
@@ -113,21 +111,40 @@ const App: React.FC = () => {
       } else {
         showPopup('FAILED', "এই নাম্বারে কোন একাউন্ট নেই।");
       }
-    } catch (e) {
+    } catch (e: any) {
+      console.error("Login error:", e);
       showPopup('FAILED', "লগইন করা সম্ভব হচ্ছে না।");
     }
   };
 
-  const handleRegister = async (user: User) => {
+  const handleRegister = async (user: Omit<User, 'id'>) => {
     try {
-      const { data: existing } = await supabase.from('users').select('id').eq('phone', user.phone).maybeSingle();
+      // 1. Check if user already exists
+      const { data: existing, error: checkError } = await supabase.from('users').select('id').eq('phone', user.phone).maybeSingle();
+      if (checkError) {
+        console.error("Check existing user error:", checkError);
+        showPopup('FAILED', "সার্ভারের সাথে সংযোগ বিচ্ছিন্ন।");
+        return;
+      }
+      
       if (existing) {
         showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে একাউন্ট আছে।");
         return;
       }
 
+      // 2. Insert new user. We let Supabase generate the ID if it's set to UUID or identity.
       const { data: newUser, error: regError } = await supabase.from('users').insert([user]).select().single();
-      if (regError) throw regError;
+      
+      if (regError) {
+        console.error("Registration insert error details:", regError);
+        // Specifically check if it's a table missing error or column missing error
+        if (regError.code === '42P01') {
+          showPopup('FAILED', "ডেটাবেস টেবিল খুঁজে পাওয়া যায়নি।");
+        } else {
+          showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${regError.message}`);
+        }
+        return;
+      }
       
       if (newUser) {
         setCurrentUser(newUser);
@@ -135,8 +152,9 @@ const App: React.FC = () => {
         localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
         showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে!");
       }
-    } catch (e) {
-      showPopup('FAILED', "রেজিস্ট্রেশন ব্যর্থ হয়েছে।");
+    } catch (e: any) {
+      console.error("Unexpected registration error:", e);
+      showPopup('FAILED', "রেজিস্ট্রেশন ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।");
     }
   };
 
@@ -250,8 +268,8 @@ const App: React.FC = () => {
       <div className="max-w-md mx-auto min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
         <AlertCircle size={60} className="text-red-500 mb-4" />
         <h1 className="text-xl font-bold mb-2">সংযোগ বিচ্ছিন্ন</h1>
-        <p className="text-gray-500 mb-6">{error}</p>
-        <button onClick={() => window.location.reload()} className="bg-blue-900 text-white px-8 py-3 rounded-full font-bold shadow-lg">পুনরায় চেষ্টা করুন</button>
+        <p className="text-gray-500 mb-6 font-medium">{error}</p>
+        <button onClick={() => window.location.reload()} className="bg-blue-900 text-white px-8 py-3 rounded-full font-bold shadow-lg active:scale-95 transition-all">পুনরায় চেষ্টা করুন</button>
       </div>
     );
   }

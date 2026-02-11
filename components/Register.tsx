@@ -4,7 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { UserRole, User } from '../types';
 
 interface Props {
-  onRegister: (user: User) => void;
+  onRegister: (user: Omit<User, 'id'>) => Promise<void>;
 }
 
 const Register: React.FC<Props> = ({ onRegister }) => {
@@ -16,19 +16,24 @@ const Register: React.FC<Props> = ({ onRegister }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name || !phone || !password) return;
+    
     setIsLoading(true);
-    await onRegister({
-      id: Math.random().toString(36).substring(7),
-      name,
-      phone,
-      password,
-      role: UserRole.USER,
-      balance: 0,
-      driveBalance: 0,
-      isBlocked: false
-    });
-    setIsLoading(false);
-    // Navigation is handled in App.tsx upon success
+    try {
+      await onRegister({
+        name,
+        phone,
+        password,
+        role: UserRole.USER,
+        balance: 0,
+        driveBalance: 0,
+        isBlocked: false
+      });
+    } catch (err) {
+      console.error("Registration UI handle error:", err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
