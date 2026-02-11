@@ -28,7 +28,6 @@ const App: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<ExtendedChatMessage[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<AppSettings>({
     bkashNumber: '01XXXXXXXXX',
     nagadNumber: '01XXXXXXXXX',
@@ -51,82 +50,78 @@ const App: React.FC = () => {
   const [notification, setNotification] = useState<{show: boolean, type: 'SUCCESS' | 'FAILED', message: string}>({show: false, type: 'SUCCESS', message: ''});
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        const results = await Promise.allSettled([
-          supabase.from('users').select('*'),
-          supabase.from('transactions').select('*').order('date', { ascending: false }),
-          supabase.from('offers').select('*'),
-          supabase.from('chat_messages').select('*').order('timestamp', { ascending: true }),
-          supabase.from('app_settings').select('*').maybeSingle()
-        ]);
-
-        if (results[0].status === 'fulfilled' && results[0].value.data) setUsers(results[0].value.data);
-        if (results[1].status === 'fulfilled' && results[1].value.data) setTransactions(results[1].value.data);
-        if (results[2].status === 'fulfilled' && results[2].value.data) setOffers(results[2].value.data);
-        if (results[3].status === 'fulfilled' && results[3].value.data) setChatMessages(results[3].value.data);
-        if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data);
-
-        const savedUserStr = localStorage.getItem('trust_telecom_user');
-        if (savedUserStr) {
-          const parsed = JSON.parse(savedUserStr);
-          const verifiedUser = (results[0].status === 'fulfilled' ? results[0].value.data : [])?.find((u: User) => u.id === parsed.id);
-          if (verifiedUser) {
-            setCurrentUser(verifiedUser);
-          } else {
-            localStorage.removeItem('trust_telecom_user');
-          }
-        }
-      } catch (err: any) {
-        setError("সিস্টেম লোড করতে সমস্যা হচ্ছে।");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchData();
   }, []);
 
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      
+      const results = await Promise.allSettled([
+        supabase.from('users').select('*'),
+        supabase.from('transactions').select('*').order('date', { ascending: false }),
+        supabase.from('offers').select('*'),
+        supabase.from('chat_messages').select('*').order('timestamp', { ascending: true }),
+        supabase.from('app_settings').select('*').maybeSingle()
+      ]);
+
+      if (results[0].status === 'fulfilled' && results[0].value.data) setUsers(results[0].value.data);
+      if (results[1].status === 'fulfilled' && results[1].value.data) setTransactions(results[1].value.data);
+      if (results[2].status === 'fulfilled' && results[2].value.data) setOffers(results[2].value.data);
+      if (results[3].status === 'fulfilled' && results[3].value.data) setChatMessages(results[3].value.data);
+      if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data);
+
+      const savedUserStr = localStorage.getItem('trust_telecom_user');
+      if (savedUserStr) {
+        const parsed = JSON.parse(savedUserStr);
+        const { data: verifiedUser } = await supabase.from('users').select('*').eq('id', parsed.id).maybeSingle();
+        if (verifiedUser) {
+          setCurrentUser(verifiedUser);
+        } else {
+          localStorage.removeItem('trust_telecom_user');
+        }
+      }
+    } catch (err: any) {
+      console.error("Fetch Error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const showPopup = (type: 'SUCCESS' | 'FAILED', message: string) => {
     setNotification({ show: true, type, message });
-    const duration = type === 'FAILED' ? 15000 : 3000;
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), duration);
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), type === 'FAILED' ? 10000 : 3000);
   };
 
   const handleLogin = async (user: User) => {
     try {
-      const { data, error: loginError } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
-      if (loginError) throw loginError;
+      const { data, error } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
+      if (error) throw error;
 
       if (data) {
-        if (user.password && data.password && data.password !== user.password) {
-          showPopup('FAILED', "পাসওয়ার্ড ভুল। আবার চেষ্টা করুন।");
-          return;
+        if (data.password === user.password) {
+          setCurrentUser(data);
+          localStorage.setItem('trust_telecom_user', JSON.stringify(data));
+          showPopup('SUCCESS', "লগইন সফল হয়েছে!");
+        } else {
+          showPopup('FAILED', "ভুল পাসওয়ার্ড। আবার চেষ্টা করুন।");
         }
-        setCurrentUser(data);
-        localStorage.setItem('trust_telecom_user', JSON.stringify(data));
       } else {
-        showPopup('FAILED', "এই নাম্বারে কোনো অ্যাকাউন্ট নেই।");
+        showPopup('FAILED', "এই নাম্বারে কোনো অ্যাকাউন্ট খুঁজে পাওয়া যায়নি।");
       }
     } catch (e: any) {
-      showPopup('FAILED', `লগইন ব্যর্থ। ডাটাবেস চেক করুন।`);
+      showPopup('FAILED', `লগইন সমস্যা: ${e.message}`);
     }
   };
 
   const handleRegister = async (userData: Omit<User, 'id'>) => {
     try {
-      // Create a clean ID
-      const tempId = 'U' + Math.floor(10000 + Math.random() * 90000);
+      const tempId = 'U' + Math.floor(100000 + Math.random() * 900000);
       const userToInsert = { ...userData, id: tempId };
 
-      const { data: existing, error: checkError } = await supabase.from('users').select('id').eq('phone', userData.phone).maybeSingle();
-      if (checkError) throw checkError;
-      
+      const { data: existing } = await supabase.from('users').select('id').eq('phone', userData.phone).maybeSingle();
       if (existing) {
-        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে অ্যাকাউন্ট আছে।");
+        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে একটি অ্যাকাউন্ট আছে।");
         return;
       }
 
@@ -134,11 +129,7 @@ const App: React.FC = () => {
       
       if (regError) {
         let msg = regError.message;
-        if (regError.message.includes('payPassword')) {
-          msg = "আপনার ডাটাবেসে 'payPassword' কলামটি নেই। অ্যাডমিন প্যানেল থেকে SQL রান করুন এবং ক্যাশ রিলোড করুন।";
-        } else if (regError.message.includes('uuid')) {
-          msg = "আপনার 'id' কলামটি UUID হিসেবে আছে। এটিকে SQL Editor দিয়ে TEXT এ পরিবর্তন করতে হবে।";
-        }
+        if (msg.includes('public.users')) msg = "ডাটাবেস টেবিল খুঁজে পাওয়া যাচ্ছে না। অ্যাডমিন প্যানেল থেকে SQL রান করুন।";
         showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${msg}`);
         return;
       }
@@ -150,7 +141,7 @@ const App: React.FC = () => {
         showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে!");
       }
     } catch (e: any) {
-      showPopup('FAILED', `ত্রুটি: ${e.message || "সার্ভার সংযোগ সমস্যা"}`);
+      showPopup('FAILED', `ত্রুটি: ${e.message}`);
     }
   };
 
@@ -159,23 +150,74 @@ const App: React.FC = () => {
     localStorage.removeItem('trust_telecom_user');
   };
 
-  // ... rest of the App.tsx component
+  const addTransaction = async (tx: Omit<Transaction, 'id' | 'date' | 'status'>) => {
+    try {
+      const { data, error } = await supabase.from('transactions').insert([{ ...tx, status: 'PENDING' }]).select().single();
+      if (error) throw error;
+      if (data) {
+        setTransactions(prev => [data, ...prev]);
+        showPopup('SUCCESS', "আবেদনটি সফলভাবে জমা হয়েছে।");
+      }
+    } catch (e) {
+      showPopup('FAILED', "ট্রানজেকশন সফল হয়নি।");
+    }
+  };
+
+  const updateTransactionStatus = async (txId: string, status: 'SUCCESS' | 'FAILED') => {
+    try {
+      const { data: updatedTx } = await supabase.from('transactions').update({ status }).eq('id', txId).select().single();
+      if (updatedTx) {
+        setTransactions(prev => prev.map(tx => tx.id === txId ? updatedTx : tx));
+        fetchData(); // Refresh balances
+        showPopup('SUCCESS', "স্ট্যাটাস আপডেট হয়েছে।");
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const updateUser = async (userId: string, data: Partial<User>) => {
+    const { data: updated } = await supabase.from('users').update(data).eq('id', userId).select().single();
+    if (updated) {
+      setUsers(prev => prev.map(u => u.id === userId ? updated : u));
+      if (currentUser?.id === userId) setCurrentUser(updated);
+      showPopup('SUCCESS', "ইউজার আপডেট হয়েছে।");
+    }
+  };
+
+  const manageOffers = async (action: 'ADD' | 'DELETE', offer?: Offer) => {
+    if (action === 'ADD' && offer) {
+      const { data } = await supabase.from('offers').insert([offer]).select().single();
+      if (data) setOffers(prev => [...prev, data]);
+    } else if (action === 'DELETE' && offer) {
+      await supabase.from('offers').delete().eq('id', offer.id);
+      setOffers(prev => prev.filter(o => o.id !== offer.id));
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="max-w-md mx-auto min-h-screen bg-blue-900 flex flex-col items-center justify-center p-10">
+        <Loader2 className="w-16 h-16 text-white animate-spin mb-6" />
+        <h1 className="text-2xl font-black text-white uppercase tracking-widest">Trust Telecom</h1>
+      </div>
+    );
+  }
+
   return (
     <Router>
       <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl relative overflow-hidden flex flex-col">
         {notification.show && (
           <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-black/70 backdrop-blur-md transition-all duration-300">
-            <div className={`bg-white rounded-[40px] p-10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] max-w-xs w-full text-center border-t-[14px] ${notification.type === 'SUCCESS' ? 'border-green-500' : 'border-red-500'} transform scale-100 animate-in zoom-in duration-200`}>
-              <div className={`w-24 h-24 rounded-full mx-auto mb-8 flex items-center justify-center ${notification.type === 'SUCCESS' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                {notification.type === 'SUCCESS' ? <CheckCircle size={60} /> : <Database size={60} />}
+            <div className={`bg-white rounded-[40px] p-10 shadow-2xl max-w-xs w-full text-center border-t-[14px] ${notification.type === 'SUCCESS' ? 'border-green-500' : 'border-red-500'}`}>
+              <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center ${notification.type === 'SUCCESS' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                {notification.type === 'SUCCESS' ? <CheckCircle size={48} /> : <Database size={48} />}
               </div>
-              <h2 className={`text-2xl font-black mb-4 tracking-tight leading-none ${notification.type === 'SUCCESS' ? 'text-green-600' : 'text-red-600'}`}>
+              <h2 className={`text-xl font-black mb-3 ${notification.type === 'SUCCESS' ? 'text-green-600' : 'text-red-600'}`}>
                 {notification.type === 'SUCCESS' ? 'সফল হয়েছে!' : 'ডেটাবেস এরর!'}
               </h2>
-              <p className="text-gray-500 font-bold text-xs leading-relaxed mb-8">{notification.message}</p>
+              <p className="text-gray-500 font-bold text-[10px] leading-relaxed mb-6">{notification.message}</p>
               <button 
                 onClick={() => setNotification(prev => ({ ...prev, show: false }))}
-                className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-lg hover:bg-blue-800 active:scale-95 transition-all"
+                className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase"
               >
                 বন্ধ করুন
               </button>
@@ -196,13 +238,16 @@ const App: React.FC = () => {
                 currentUser.role === UserRole.ADMIN ? 
                 <AdminDashboard 
                   user={currentUser} users={users} services={services} settings={settings} offers={offers}
-                  onManageOffers={() => {}} onUpdateSettings={() => {}} onUpdateUser={() => {}}
-                  onToggleService={() => {}} 
-                  onLogout={handleLogout} transactions={transactions} onUpdateTransaction={() => {}}
-                  chatMessages={chatMessages} onAdminReply={() => {}}
+                  onManageOffers={manageOffers} onUpdateSettings={(s) => supabase.from('app_settings').upsert([{id:1, ...settings, ...s}]).then(fetchData)} onUpdateUser={updateUser}
+                  onToggleService={(id) => setServices(prev => prev.map(s => s.id === id ? { ...s, isActive: !s.isActive } : s))} 
+                  onLogout={handleLogout} transactions={transactions} onUpdateTransaction={updateTransactionStatus}
+                  chatMessages={chatMessages} onAdminReply={(text, isAdmin, recipientId) => supabase.from('chat_messages').insert([{senderId:'ADMIN', recipientId, text, isAdmin:true}]).then(fetchData)}
                 /> : 
-                <UserDashboard user={currentUser} services={services} settings={settings} onLogout={handleLogout} onUpdateUser={() => {}} />
+                <UserDashboard user={currentUser} services={services} settings={settings} onLogout={handleLogout} onUpdateUser={updateUser} />
               } />
+              <Route path="/history" element={<HistoryView transactions={transactions.filter(t => t.userId === currentUser.id)} />} />
+              <Route path="/chat" element={<ChatView messages={chatMessages.filter(m => m.senderId === currentUser.id || m.recipientId === currentUser.id)} onSendMessage={(text) => supabase.from('chat_messages').insert([{senderId:currentUser.id, text, isAdmin:false}]).then(fetchData)} user={currentUser} />} />
+              <Route path="/service/:id" element={<ServiceForm onSubmit={addTransaction} services={services} settings={settings} user={currentUser} loans={[]} savings={[]} offers={offers} />} />
               <Route path="*" element={<Navigate to="/dashboard" />} />
             </>
           )}
