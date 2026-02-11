@@ -93,7 +93,9 @@ const App: React.FC = () => {
 
   const showPopup = (type: 'SUCCESS' | 'FAILED', message: string) => {
     setNotification({ show: true, type, message });
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 3000);
+    // Keep failed notifications longer so users can read the error
+    const duration = type === 'FAILED' ? 5000 : 3000;
+    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), duration);
   };
 
   const handleLogin = async (user: User) => {
@@ -103,46 +105,51 @@ const App: React.FC = () => {
 
       if (data) {
         if (user.password && data.password && data.password !== user.password) {
-          showPopup('FAILED', "পাসওয়ার্ড ভুল।");
+          showPopup('FAILED', "পাসওয়ার্ড ভুল। সঠিক পাসওয়ার্ড দিয়ে আবার চেষ্টা করুন।");
           return;
         }
         setCurrentUser(data);
         localStorage.setItem('trust_telecom_user', JSON.stringify(data));
       } else {
-        showPopup('FAILED', "এই নাম্বারে কোন একাউন্ট নেই।");
+        showPopup('FAILED', "এই নাম্বারে কোন একাউন্ট পাওয়া যায়নি। অনুগ্রহ করে রেজিস্ট্রেশন করুন।");
       }
     } catch (e: any) {
       console.error("Login error:", e);
-      showPopup('FAILED', "লগইন করা সম্ভব হচ্ছে না।");
+      showPopup('FAILED', `লগইন ব্যর্থ: ${e.message || "সার্ভার সমস্যা"}`);
     }
   };
 
   const handleRegister = async (user: Omit<User, 'id'>) => {
     try {
-      // 1. Check if user already exists
-      const { data: existing, error: checkError } = await supabase.from('users').select('id').eq('phone', user.phone).maybeSingle();
-      if (checkError) {
-        console.error("Check existing user error:", checkError);
-        showPopup('FAILED', "সার্ভারের সাথে সংযোগ বিচ্ছিন্ন।");
-        return;
-      }
-      
-      if (existing) {
-        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে একাউন্ট আছে।");
+      // 1. Check connectivity first
+      const { error: pingError } = await supabase.from('users').select('count', { count: 'exact', head: true });
+      if (pingError) {
+        console.error("DB Ping error:", pingError);
+        showPopup('FAILED', `সার্ভার সংযোগ ত্রুটি: ${pingError.message}. অনুগ্রহ করে চেক করুন 'users' টেবিল তৈরি করা আছে কি না।`);
         return;
       }
 
-      // 2. Insert new user. We let Supabase generate the ID if it's set to UUID or identity.
+      // 2. Check existing
+      const { data: existing, error: checkError } = await supabase.from('users').select('id').eq('phone', user.phone).maybeSingle();
+      if (checkError) throw checkError;
+      
+      if (existing) {
+        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে একটি একাউন্ট খোলা আছে। অনুগ্রহ করে লগইন করুন।");
+        return;
+      }
+
+      // 3. Insert
       const { data: newUser, error: regError } = await supabase.from('users').insert([user]).select().single();
       
       if (regError) {
-        console.error("Registration insert error details:", regError);
-        // Specifically check if it's a table missing error or column missing error
-        if (regError.code === '42P01') {
-          showPopup('FAILED', "ডেটাবেস টেবিল খুঁজে পাওয়া যায়নি।");
-        } else {
-          showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${regError.message}`);
-        }
+        console.error("Registration error:", regError);
+        // Provide very specific error messages based on Supabase codes
+        let msg = `রেজিস্ট্রেশন ব্যর্থ: ${regError.message}`;
+        if (regError.code === '23505') msg = "এই নাম্বারটি ইতিমধ্যে ব্যবহৃত হয়েছে।";
+        if (regError.code === '42P01') msg = "ডেটাবেস টেবিল ('users') খুঁজে পাওয়া যায়নি। অনুগ্রহ করে টেবিলটি তৈরি করুন।";
+        if (regError.code === 'PGRST116') msg = "সার্ভার থেকে সঠিক রেসপন্স পাওয়া যায়নি।";
+        
+        showPopup('FAILED', msg);
         return;
       }
       
@@ -150,11 +157,11 @@ const App: React.FC = () => {
         setCurrentUser(newUser);
         setUsers(prev => [...prev, newUser]);
         localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
-        showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে!");
+        showPopup('SUCCESS', "অভিনন্দন! আপনার রেজিস্ট্রেশন সফল হয়েছে।");
       }
     } catch (e: any) {
       console.error("Unexpected registration error:", e);
-      showPopup('FAILED', "রেজিস্ট্রেশন ব্যর্থ হয়েছে। পুনরায় চেষ্টা করুন।");
+      showPopup('FAILED', `অপ্রত্যাশিত ত্রুটি: ${e.message || "পুনরায় চেষ্টা করুন"}`);
     }
   };
 
@@ -170,10 +177,10 @@ const App: React.FC = () => {
       if (txError) throw txError;
       if (data) {
         setTransactions(prev => [data, ...prev]);
-        showPopup('SUCCESS', "অনুরোধটি সফলভাবে পাঠানো হয়েছে।");
+        showPopup('SUCCESS', "আপনার অনুরোধটি সফলভাবে সাবমিট হয়েছে।");
       }
-    } catch (e) {
-      showPopup('FAILED', "অনুরোধ পাঠানো সম্ভব হয়নি।");
+    } catch (e: any) {
+      showPopup('FAILED', `অনুরোধ পাঠাতে সমস্যা: ${e.message}`);
     }
   };
 
@@ -211,10 +218,10 @@ const App: React.FC = () => {
           setCurrentUser(updated);
           localStorage.setItem('trust_telecom_user', JSON.stringify(updated));
         }
-        showPopup('SUCCESS', "আপডেট সফল হয়েছে");
+        showPopup('SUCCESS', "প্রোফাইল আপডেট সফল হয়েছে");
       }
-    } catch (e) {
-      showPopup('FAILED', "আপডেট করা সম্ভব হয়নি।");
+    } catch (e: any) {
+      showPopup('FAILED', `আপডেট ব্যর্থ: ${e.message}`);
     }
   };
 
@@ -231,9 +238,9 @@ const App: React.FC = () => {
       const { data, error: sError } = await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]).select().single();
       if (sError) throw sError;
       if (data) setSettings(data);
-      showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে");
-    } catch (e) {
-      showPopup('FAILED', "সেটিংস আপডেট ব্যর্থ।");
+      showPopup('SUCCESS', "সেটিংস সেভ করা হয়েছে");
+    } catch (e: any) {
+      showPopup('FAILED', `সেটিংস আপডেট ব্যর্থ: ${e.message}`);
     }
   };
 
@@ -242,12 +249,12 @@ const App: React.FC = () => {
       if (action === 'ADD' && offer) {
         const { data } = await supabase.from('offers').insert([offer]).select().single();
         if (data) setOffers(prev => [...prev, data]);
-        showPopup('SUCCESS', "অফার যোগ করা হয়েছে");
+        showPopup('SUCCESS', "অফার সফলভাবে যোগ করা হয়েছে");
       } else if (action === 'DELETE' && offer) {
         const { error: delError } = await supabase.from('offers').delete().eq('id', offer.id);
         if (!delError) {
           setOffers(prev => prev.filter(o => o.id !== offer.id));
-          showPopup('SUCCESS', "অফার মুছে ফেলা হয়েছে");
+          showPopup('SUCCESS', "অফারটি মুছে ফেলা হয়েছে");
         }
       }
     } catch (e) { console.error(e); }
@@ -258,7 +265,7 @@ const App: React.FC = () => {
       <div className="max-w-md mx-auto min-h-screen bg-blue-900 flex flex-col items-center justify-center p-10">
         <Loader2 className="w-16 h-16 text-white animate-spin mb-6" />
         <h1 className="text-2xl font-black text-white">Trust Telecom</h1>
-        <p className="text-blue-200 mt-2 font-bold">লোড হচ্ছে...</p>
+        <p className="text-blue-200 mt-2 font-bold">সার্ভারের সাথে কানেক্ট করা হচ্ছে...</p>
       </div>
     );
   }
@@ -266,10 +273,17 @@ const App: React.FC = () => {
   if (error) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
-        <AlertCircle size={60} className="text-red-500 mb-4" />
-        <h1 className="text-xl font-bold mb-2">সংযোগ বিচ্ছিন্ন</h1>
-        <p className="text-gray-500 mb-6 font-medium">{error}</p>
-        <button onClick={() => window.location.reload()} className="bg-blue-900 text-white px-8 py-3 rounded-full font-bold shadow-lg active:scale-95 transition-all">পুনরায় চেষ্টা করুন</button>
+        <div className="bg-red-50 p-8 rounded-[40px] border-2 border-red-100 shadow-xl">
+          <AlertCircle size={64} className="text-red-500 mx-auto mb-6" />
+          <h1 className="text-2xl font-black text-gray-800 mb-2">সংযোগ বিচ্ছিন্ন!</h1>
+          <p className="text-gray-500 mb-8 font-medium leading-relaxed">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="w-full bg-blue-900 text-white px-8 py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-all text-lg"
+          >
+            আবার চেষ্টা করুন
+          </button>
+        </div>
       </div>
     );
   }
@@ -277,11 +291,23 @@ const App: React.FC = () => {
   return (
     <Router>
       <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl relative overflow-hidden flex flex-col">
+        {/* CENTERED NOTIFICATION POPUP */}
         {notification.show && (
-          <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[999] animate-bounce">
-            <div className={`${notification.type === 'SUCCESS' ? 'bg-green-500' : 'bg-red-500'} text-white px-6 py-3 rounded-full shadow-2xl flex items-center space-x-2 border-2 border-white/50`}>
-              {notification.type === 'SUCCESS' ? <CheckCircle size={20} /> : <XCircle size={20} />}
-              <span className="font-bold text-sm whitespace-nowrap">{notification.message}</span>
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-6 bg-black/40 backdrop-blur-sm transition-opacity animate-in fade-in duration-300">
+            <div className={`bg-white rounded-[32px] p-8 shadow-2xl max-w-xs w-full text-center border-b-8 ${notification.type === 'SUCCESS' ? 'border-green-500' : 'border-red-500'} animate-in zoom-in duration-300`}>
+              <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center ${notification.type === 'SUCCESS' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
+                {notification.type === 'SUCCESS' ? <CheckCircle size={44} /> : <XCircle size={44} />}
+              </div>
+              <h2 className={`text-xl font-black mb-3 ${notification.type === 'SUCCESS' ? 'text-green-600' : 'text-red-600'}`}>
+                {notification.type === 'SUCCESS' ? 'সফল হয়েছে' : 'সমস্যা হয়েছে!'}
+              </h2>
+              <p className="text-gray-600 font-bold leading-relaxed">{notification.message}</p>
+              <button 
+                onClick={() => setNotification(prev => ({ ...prev, show: false }))}
+                className="mt-8 w-full bg-gray-100 text-gray-800 py-3 rounded-2xl font-black text-sm uppercase tracking-widest active:scale-95 transition-all"
+              >
+                বন্ধ করুন
+              </button>
             </div>
           </div>
         )}
