@@ -10,7 +10,7 @@ import HistoryView from './components/HistoryView';
 import ServiceForm from './components/ServiceForm';
 import ChatView from './components/ChatView';
 import { User, UserRole, Transaction, ServiceStatus, ChatMessage, Offer, Loan, Savings, AppSettings } from './types';
-import { CheckCircle, XCircle, AlertCircle, Loader2, Database } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Loader2, Database, ShieldAlert } from 'lucide-react';
 
 // Supabase Credentials
 const SUPABASE_URL = 'https://sxigiychhjxwisxbaamh.supabase.co';
@@ -47,7 +47,7 @@ const App: React.FC = () => {
     { id: 'bill_pay', name: 'Bill Pay', isActive: true, requiresVerification: false },
   ]);
 
-  const [notification, setNotification] = useState<{show: boolean, type: 'SUCCESS' | 'FAILED', message: string}>({show: false, type: 'SUCCESS', message: ''});
+  const [notification, setNotification] = useState<{show: boolean, type: 'SUCCESS' | 'FAILED' | 'PERMISSION', message: string}>({show: false, type: 'SUCCESS', message: ''});
 
   useEffect(() => {
     fetchData();
@@ -56,7 +56,6 @@ const App: React.FC = () => {
   const fetchData = async () => {
     try {
       setIsLoading(true);
-      
       const results = await Promise.allSettled([
         supabase.from('users').select('*'),
         supabase.from('transactions').select('*').order('date', { ascending: false }),
@@ -75,11 +74,8 @@ const App: React.FC = () => {
       if (savedUserStr) {
         const parsed = JSON.parse(savedUserStr);
         const { data: verifiedUser } = await supabase.from('users').select('*').eq('id', parsed.id).maybeSingle();
-        if (verifiedUser) {
-          setCurrentUser(verifiedUser);
-        } else {
-          localStorage.removeItem('trust_telecom_user');
-        }
+        if (verifiedUser) setCurrentUser(verifiedUser);
+        else localStorage.removeItem('trust_telecom_user');
       }
     } catch (err: any) {
       console.error("Fetch Error:", err);
@@ -88,108 +84,55 @@ const App: React.FC = () => {
     }
   };
 
-  const showPopup = (type: 'SUCCESS' | 'FAILED', message: string) => {
+  const showPopup = (type: 'SUCCESS' | 'FAILED' | 'PERMISSION', message: string) => {
     setNotification({ show: true, type, message });
-    setTimeout(() => setNotification(prev => ({ ...prev, show: false })), type === 'FAILED' ? 10000 : 3000);
+    if (type !== 'PERMISSION') {
+      setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 5000);
+    }
   };
 
   const handleLogin = async (user: User) => {
     try {
       const { data, error } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
-      if (error) throw error;
-
-      if (data) {
-        if (data.password === user.password) {
-          setCurrentUser(data);
-          localStorage.setItem('trust_telecom_user', JSON.stringify(data));
-          showPopup('SUCCESS', "লগইন সফল হয়েছে!");
-        } else {
-          showPopup('FAILED', "ভুল পাসওয়ার্ড। আবার চেষ্টা করুন।");
-        }
+      if (error) {
+        if (error.message.includes('permission')) showPopup('PERMISSION', "ডাটাবেস এক্সেস পারমিশন দেয়া নেই। অ্যাডমিন প্যানেল থেকে 'GRANT' SQL কমান্ড রান করুন।");
+        else throw error;
+        return;
+      }
+      if (data && data.password === user.password) {
+        setCurrentUser(data);
+        localStorage.setItem('trust_telecom_user', JSON.stringify(data));
+        showPopup('SUCCESS', "লগইন সফল!");
       } else {
-        showPopup('FAILED', "এই নাম্বারে কোনো অ্যাকাউন্ট খুঁজে পাওয়া যায়নি।");
+        showPopup('FAILED', "ভুল তথ্য দিয়েছেন।");
       }
     } catch (e: any) {
-      showPopup('FAILED', `লগইন সমস্যা: ${e.message}`);
+      showPopup('FAILED', e.message);
     }
   };
 
   const handleRegister = async (userData: Omit<User, 'id'>) => {
     try {
       const tempId = 'U' + Math.floor(100000 + Math.random() * 900000);
-      const userToInsert = { ...userData, id: tempId };
-
-      const { data: existing } = await supabase.from('users').select('id').eq('phone', userData.phone).maybeSingle();
-      if (existing) {
-        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে একটি অ্যাকাউন্ট আছে।");
-        return;
-      }
-
-      const { data: newUser, error: regError } = await supabase.from('users').insert([userToInsert]).select().single();
+      const { error: regError, data: newUser } = await supabase.from('users').insert([{ ...userData, id: tempId }]).select().single();
       
       if (regError) {
-        let msg = regError.message;
-        if (msg.includes('public.users')) msg = "ডাটাবেস টেবিল খুঁজে পাওয়া যাচ্ছে না। অ্যাডমিন প্যানেল থেকে SQL রান করুন।";
-        showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${msg}`);
+        if (regError.message.includes('permission')) {
+          showPopup('PERMISSION', "আপনার সুপাবেজে 'Permission Denied' এরর আসছে। এটি ঠিক করতে অ্যাডমিন প্যানেলের SQL রান করুন।");
+        } else {
+          showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${regError.message}`);
+        }
         return;
       }
       
       if (newUser) {
         setCurrentUser(newUser);
-        setUsers(prev => [...prev, newUser]);
         localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
-        showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে!");
+        showPopup('SUCCESS', "অ্যাকাউন্ট তৈরি হয়েছে!");
+        fetchData();
       }
     } catch (e: any) {
-      showPopup('FAILED', `ত্রুটি: ${e.message}`);
-    }
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('trust_telecom_user');
-  };
-
-  const addTransaction = async (tx: Omit<Transaction, 'id' | 'date' | 'status'>) => {
-    try {
-      const { data, error } = await supabase.from('transactions').insert([{ ...tx, status: 'PENDING' }]).select().single();
-      if (error) throw error;
-      if (data) {
-        setTransactions(prev => [data, ...prev]);
-        showPopup('SUCCESS', "আবেদনটি সফলভাবে জমা হয়েছে।");
-      }
-    } catch (e) {
-      showPopup('FAILED', "ট্রানজেকশন সফল হয়নি।");
-    }
-  };
-
-  const updateTransactionStatus = async (txId: string, status: 'SUCCESS' | 'FAILED') => {
-    try {
-      const { data: updatedTx } = await supabase.from('transactions').update({ status }).eq('id', txId).select().single();
-      if (updatedTx) {
-        setTransactions(prev => prev.map(tx => tx.id === txId ? updatedTx : tx));
-        fetchData(); // Refresh balances
-        showPopup('SUCCESS', "স্ট্যাটাস আপডেট হয়েছে।");
-      }
-    } catch (e) { console.error(e); }
-  };
-
-  const updateUser = async (userId: string, data: Partial<User>) => {
-    const { data: updated } = await supabase.from('users').update(data).eq('id', userId).select().single();
-    if (updated) {
-      setUsers(prev => prev.map(u => u.id === userId ? updated : u));
-      if (currentUser?.id === userId) setCurrentUser(updated);
-      showPopup('SUCCESS', "ইউজার আপডেট হয়েছে।");
-    }
-  };
-
-  const manageOffers = async (action: 'ADD' | 'DELETE', offer?: Offer) => {
-    if (action === 'ADD' && offer) {
-      const { data } = await supabase.from('offers').insert([offer]).select().single();
-      if (data) setOffers(prev => [...prev, data]);
-    } else if (action === 'DELETE' && offer) {
-      await supabase.from('offers').delete().eq('id', offer.id);
-      setOffers(prev => prev.filter(o => o.id !== offer.id));
+      showPopup('FAILED', e.message);
     }
   };
 
@@ -206,21 +149,14 @@ const App: React.FC = () => {
     <Router>
       <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl relative overflow-hidden flex flex-col">
         {notification.show && (
-          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-black/70 backdrop-blur-md transition-all duration-300">
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center p-6 bg-black/80 backdrop-blur-md">
             <div className={`bg-white rounded-[40px] p-10 shadow-2xl max-w-xs w-full text-center border-t-[14px] ${notification.type === 'SUCCESS' ? 'border-green-500' : 'border-red-500'}`}>
               <div className={`w-20 h-20 rounded-full mx-auto mb-6 flex items-center justify-center ${notification.type === 'SUCCESS' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}`}>
-                {notification.type === 'SUCCESS' ? <CheckCircle size={48} /> : <Database size={48} />}
+                {notification.type === 'SUCCESS' ? <CheckCircle size={48} /> : notification.type === 'PERMISSION' ? <ShieldAlert size={48} /> : <Database size={48} />}
               </div>
-              <h2 className={`text-xl font-black mb-3 ${notification.type === 'SUCCESS' ? 'text-green-600' : 'text-red-600'}`}>
-                {notification.type === 'SUCCESS' ? 'সফল হয়েছে!' : 'ডেটাবেস এরর!'}
-              </h2>
+              <h2 className="text-xl font-black mb-3">{notification.type === 'SUCCESS' ? 'সফল হয়েছে!' : 'সিকিউরিটি এরর!'}</h2>
               <p className="text-gray-500 font-bold text-[10px] leading-relaxed mb-6">{notification.message}</p>
-              <button 
-                onClick={() => setNotification(prev => ({ ...prev, show: false }))}
-                className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase"
-              >
-                বন্ধ করুন
-              </button>
+              <button onClick={() => setNotification(prev => ({ ...prev, show: false }))} className="w-full bg-blue-900 text-white py-4 rounded-2xl font-black text-xs uppercase">বন্ধ করুন</button>
             </div>
           </div>
         )}
@@ -238,16 +174,19 @@ const App: React.FC = () => {
                 currentUser.role === UserRole.ADMIN ? 
                 <AdminDashboard 
                   user={currentUser} users={users} services={services} settings={settings} offers={offers}
-                  onManageOffers={manageOffers} onUpdateSettings={(s) => supabase.from('app_settings').upsert([{id:1, ...settings, ...s}]).then(fetchData)} onUpdateUser={updateUser}
-                  onToggleService={(id) => setServices(prev => prev.map(s => s.id === id ? { ...s, isActive: !s.isActive } : s))} 
-                  onLogout={handleLogout} transactions={transactions} onUpdateTransaction={updateTransactionStatus}
-                  chatMessages={chatMessages} onAdminReply={(text, isAdmin, recipientId) => supabase.from('chat_messages').insert([{senderId:'ADMIN', recipientId, text, isAdmin:true}]).then(fetchData)}
+                  onManageOffers={(action, offer) => action === 'ADD' ? supabase.from('offers').insert([offer]).then(fetchData) : supabase.from('offers').delete().eq('id', offer?.id).then(fetchData)} 
+                  onUpdateSettings={(s) => supabase.from('app_settings').upsert([{id:1, ...settings, ...s}]).then(fetchData)} 
+                  onUpdateUser={(id, data) => supabase.from('users').update(data).eq('id', id).then(fetchData)}
+                  onToggleService={() => {}} 
+                  onLogout={() => {setCurrentUser(null); localStorage.removeItem('trust_telecom_user');}} 
+                  transactions={transactions} onUpdateTransaction={(id, status) => supabase.from('transactions').update({status}).eq('id', id).then(fetchData)}
+                  chatMessages={chatMessages} onAdminReply={() => {}}
                 /> : 
-                <UserDashboard user={currentUser} services={services} settings={settings} onLogout={handleLogout} onUpdateUser={updateUser} />
+                <UserDashboard user={currentUser} services={services} settings={settings} onLogout={() => {setCurrentUser(null); localStorage.removeItem('trust_telecom_user');}} onUpdateUser={() => {}} />
               } />
-              <Route path="/history" element={<HistoryView transactions={transactions.filter(t => t.userId === currentUser.id)} />} />
+              <Route path="/service/:id" element={<ServiceForm onSubmit={(tx) => supabase.from('transactions').insert([tx]).then(() => { fetchData(); showPopup('SUCCESS', 'আবেদন জমা হয়েছে।'); })} services={services} settings={settings} user={currentUser} loans={[]} savings={[]} offers={offers} />} />
               <Route path="/chat" element={<ChatView messages={chatMessages.filter(m => m.senderId === currentUser.id || m.recipientId === currentUser.id)} onSendMessage={(text) => supabase.from('chat_messages').insert([{senderId:currentUser.id, text, isAdmin:false}]).then(fetchData)} user={currentUser} />} />
-              <Route path="/service/:id" element={<ServiceForm onSubmit={addTransaction} services={services} settings={settings} user={currentUser} loans={[]} savings={[]} offers={offers} />} />
+              <Route path="/history" element={<HistoryView transactions={transactions.filter(t => t.userId === currentUser.id)} />} />
               <Route path="*" element={<Navigate to="/dashboard" />} />
             </>
           )}
