@@ -10,7 +10,7 @@ import HistoryView from './components/HistoryView';
 import ServiceForm from './components/ServiceForm';
 import ChatView from './components/ChatView';
 import { User, UserRole, Transaction, ServiceStatus, ChatMessage, Offer, Loan, Savings, AppSettings } from './types';
-import { CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 
 // Supabase Credentials for Project: max999 (sxigiychhjxwisxbaamh)
 const SUPABASE_URL = 'https://sxigiychhjxwisxbaamh.supabase.co';
@@ -56,14 +56,8 @@ const App: React.FC = () => {
         setIsLoading(true);
         setError(null);
         
-        // Fetch users, transactions, offers, messages, and settings
-        const [
-          { data: userData, error: userError },
-          { data: txData, error: txError },
-          { data: offerData, error: offerError },
-          { data: chatData, error: chatError },
-          { data: settingsData, error: settingsError }
-        ] = await Promise.all([
+        // Parallel fetching with error trapping for each
+        const results = await Promise.allSettled([
           supabase.from('users').select('*'),
           supabase.from('transactions').select('*').order('date', { ascending: false }),
           supabase.from('offers').select('*'),
@@ -71,18 +65,19 @@ const App: React.FC = () => {
           supabase.from('app_settings').select('*').maybeSingle()
         ]);
 
-        if (userError) throw userError;
-        if (userData) setUsers(userData);
-        if (txData) setTransactions(txData);
-        if (offerData) setOffers(offerData);
-        if (chatData) setChatMessages(chatData);
-        if (settingsData) setSettings(settingsData);
+        // Process results
+        if (results[0].status === 'fulfilled' && results[0].value.data) setUsers(results[0].value.data);
+        if (results[1].status === 'fulfilled' && results[1].value.data) setTransactions(results[1].value.data);
+        if (results[2].status === 'fulfilled' && results[2].value.data) setOffers(results[2].value.data);
+        if (results[3].status === 'fulfilled' && results[3].value.data) setChatMessages(results[3].value.data);
+        if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data);
 
         // Persistent Login Check
         const savedUserStr = localStorage.getItem('trust_telecom_user');
         if (savedUserStr) {
           const parsed = JSON.parse(savedUserStr);
-          const verifiedUser = userData?.find(u => u.id === parsed.id);
+          // Check if user still exists in the fetched list
+          const verifiedUser = (results[0].status === 'fulfilled' ? results[0].value.data : [])?.find((u: User) => u.id === parsed.id);
           if (verifiedUser) {
             setCurrentUser(verifiedUser);
           } else {
@@ -91,7 +86,7 @@ const App: React.FC = () => {
         }
       } catch (err: any) {
         console.error("Critical initialization error:", err);
-        setError("Supabase connection failed. Please ensure tables exist.");
+        setError("সিস্টেম লোড করতে সমস্যা হচ্ছে। অনুগ্রহ করে আপনার নেটওয়ার্ক চেক করুন।");
       } finally {
         setIsLoading(false);
       }
@@ -107,7 +102,7 @@ const App: React.FC = () => {
 
   const handleLogin = async (user: User) => {
     try {
-      const { data, error } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
+      const { data, error: loginError } = await supabase.from('users').select('*').eq('phone', user.phone).maybeSingle();
       if (data) {
         if (user.password && data.password && data.password !== user.password) {
           showPopup('FAILED', "পাসওয়ার্ড ভুল।");
@@ -116,16 +111,32 @@ const App: React.FC = () => {
         setCurrentUser(data);
         localStorage.setItem('trust_telecom_user', JSON.stringify(data));
       } else {
-        // Register new user if not found (Simple approach)
-        const { data: newUser } = await supabase.from('users').insert([user]).select().single();
-        if (newUser) {
-          setCurrentUser(newUser);
-          setUsers(prev => [...prev, newUser]);
-          localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
-        }
+        showPopup('FAILED', "এই নাম্বারে কোন একাউন্ট নেই।");
       }
     } catch (e) {
-      showPopup('FAILED', "লগইন সফল হয়নি।");
+      showPopup('FAILED', "লগইন করা সম্ভব হচ্ছে না।");
+    }
+  };
+
+  const handleRegister = async (user: User) => {
+    try {
+      const { data: existing } = await supabase.from('users').select('id').eq('phone', user.phone).maybeSingle();
+      if (existing) {
+        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে একাউন্ট আছে।");
+        return;
+      }
+
+      const { data: newUser, error: regError } = await supabase.from('users').insert([user]).select().single();
+      if (regError) throw regError;
+      
+      if (newUser) {
+        setCurrentUser(newUser);
+        setUsers(prev => [...prev, newUser]);
+        localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
+        showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে!");
+      }
+    } catch (e) {
+      showPopup('FAILED', "রেজিস্ট্রেশন ব্যর্থ হয়েছে।");
     }
   };
 
@@ -137,7 +148,8 @@ const App: React.FC = () => {
   const addTransaction = async (tx: Omit<Transaction, 'id' | 'date' | 'status'>) => {
     try {
       const newTx = { ...tx, date: new Date().toISOString(), status: 'PENDING' };
-      const { data } = await supabase.from('transactions').insert([newTx]).select().single();
+      const { data, error: txError } = await supabase.from('transactions').insert([newTx]).select().single();
+      if (txError) throw txError;
       if (data) {
         setTransactions(prev => [data, ...prev]);
         showPopup('SUCCESS', "অনুরোধটি সফলভাবে পাঠানো হয়েছে।");
@@ -172,44 +184,63 @@ const App: React.FC = () => {
   };
 
   const updateUser = async (userId: string, data: Partial<User>) => {
-    const { data: updated } = await supabase.from('users').update(data).eq('id', userId).select().single();
-    if (updated) {
-      setUsers(prev => prev.map(u => u.id === userId ? updated : u));
-      if (currentUser?.id === userId) {
-        setCurrentUser(updated);
-        localStorage.setItem('trust_telecom_user', JSON.stringify(updated));
+    try {
+      const { data: updated, error: upError } = await supabase.from('users').update(data).eq('id', userId).select().single();
+      if (upError) throw upError;
+      if (updated) {
+        setUsers(prev => prev.map(u => u.id === userId ? updated : u));
+        if (currentUser?.id === userId) {
+          setCurrentUser(updated);
+          localStorage.setItem('trust_telecom_user', JSON.stringify(updated));
+        }
+        showPopup('SUCCESS', "আপডেট সফল হয়েছে");
       }
-      showPopup('SUCCESS', "আপডেট সফল হয়েছে");
+    } catch (e) {
+      showPopup('FAILED', "আপডেট করা সম্ভব হয়নি।");
     }
   };
 
   const sendMessage = async (text: string, isAdmin: boolean = false, recipientId?: string) => {
-    const msg = { senderId: isAdmin ? 'ADMIN' : (currentUser?.id || ''), recipientId: isAdmin ? recipientId : 'ADMIN', text, timestamp: new Date().toISOString(), isAdmin };
-    const { data } = await supabase.from('chat_messages').insert([msg]).select().single();
-    if (data) setChatMessages(prev => [...prev, data]);
+    try {
+      const msg = { senderId: isAdmin ? 'ADMIN' : (currentUser?.id || ''), recipientId: isAdmin ? recipientId : 'ADMIN', text, timestamp: new Date().toISOString(), isAdmin };
+      const { data } = await supabase.from('chat_messages').insert([msg]).select().single();
+      if (data) setChatMessages(prev => [...prev, data]);
+    } catch (e) { console.error(e); }
   };
 
   const updateSettings = async (newSettings: Partial<AppSettings>) => {
-    const { data } = await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]).select().single();
-    if (data) setSettings(data);
-    showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে");
+    try {
+      const { data, error: sError } = await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]).select().single();
+      if (sError) throw sError;
+      if (data) setSettings(data);
+      showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে");
+    } catch (e) {
+      showPopup('FAILED', "সেটিংস আপডেট ব্যর্থ।");
+    }
   };
 
   const manageOffers = async (action: 'ADD' | 'DELETE', offer?: Offer) => {
-    if (action === 'ADD' && offer) {
-      const { data } = await supabase.from('offers').insert([offer]).select().single();
-      if (data) setOffers([...offers, data]);
-    } else if (action === 'DELETE' && offer) {
-      const { error } = await supabase.from('offers').delete().eq('id', offer.id);
-      if (!error) setOffers(offers.filter(o => o.id !== offer.id));
-    }
+    try {
+      if (action === 'ADD' && offer) {
+        const { data } = await supabase.from('offers').insert([offer]).select().single();
+        if (data) setOffers(prev => [...prev, data]);
+        showPopup('SUCCESS', "অফার যোগ করা হয়েছে");
+      } else if (action === 'DELETE' && offer) {
+        const { error: delError } = await supabase.from('offers').delete().eq('id', offer.id);
+        if (!delError) {
+          setOffers(prev => prev.filter(o => o.id !== offer.id));
+          showPopup('SUCCESS', "অফার মুছে ফেলা হয়েছে");
+        }
+      }
+    } catch (e) { console.error(e); }
   };
 
   if (isLoading) {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-blue-900 flex flex-col items-center justify-center p-10">
-        <div className="w-16 h-16 border-4 border-white/30 border-t-white rounded-full animate-spin mb-6"></div>
+        <Loader2 className="w-16 h-16 text-white animate-spin mb-6" />
         <h1 className="text-2xl font-black text-white">Trust Telecom</h1>
+        <p className="text-blue-200 mt-2 font-bold">লোড হচ্ছে...</p>
       </div>
     );
   }
@@ -218,9 +249,9 @@ const App: React.FC = () => {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-white flex flex-col items-center justify-center p-6 text-center">
         <AlertCircle size={60} className="text-red-500 mb-4" />
-        <h1 className="text-xl font-bold mb-2">Error Connecting</h1>
+        <h1 className="text-xl font-bold mb-2">সংযোগ বিচ্ছিন্ন</h1>
         <p className="text-gray-500 mb-6">{error}</p>
-        <button onClick={() => window.location.reload()} className="bg-blue-900 text-white px-8 py-3 rounded-full font-bold">Retry</button>
+        <button onClick={() => window.location.reload()} className="bg-blue-900 text-white px-8 py-3 rounded-full font-bold shadow-lg">পুনরায় চেষ্টা করুন</button>
       </div>
     );
   }
@@ -229,10 +260,10 @@ const App: React.FC = () => {
     <Router>
       <div className="max-w-md mx-auto min-h-screen bg-white shadow-xl relative overflow-hidden flex flex-col">
         {notification.show && (
-          <div className="fixed top-10 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[999] animate-bounce">
             <div className={`${notification.type === 'SUCCESS' ? 'bg-green-500' : 'bg-red-500'} text-white px-6 py-3 rounded-full shadow-2xl flex items-center space-x-2 border-2 border-white/50`}>
               {notification.type === 'SUCCESS' ? <CheckCircle size={20} /> : <XCircle size={20} />}
-              <span className="font-bold text-sm">{notification.message}</span>
+              <span className="font-bold text-sm whitespace-nowrap">{notification.message}</span>
             </div>
           </div>
         )}
@@ -241,7 +272,7 @@ const App: React.FC = () => {
           {!currentUser ? (
             <>
               <Route path="/login" element={<Login onLogin={handleLogin} />} />
-              <Route path="/register" element={<Register onRegister={handleLogin} />} />
+              <Route path="/register" element={<Register onRegister={handleRegister} />} />
               <Route path="*" element={<Navigate to="/login" />} />
             </>
           ) : (

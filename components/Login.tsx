@@ -17,7 +17,7 @@ const Login: React.FC<Props> = ({ onLogin }) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Admin Credentials: 01987624041 / 225588
+    // Requested Admin Credentials: 01987624041 / 225588
     if (phone === '01987624041' && password === '225588') {
       onLogin({
         id: 'admin_master',
