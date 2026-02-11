@@ -9,6 +9,7 @@ export interface User {
   id: string;
   name: string;
   phone: string;
+  password?: string;
   role: UserRole;
   balance: number;
   driveBalance: number;

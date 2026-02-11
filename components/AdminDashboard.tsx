@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { User, ServiceStatus, Transaction, ChatMessage, AppSettings, Offer } from '../types';
-import { Users, CheckCircle, XCircle, Clock, Smartphone, LogOut, Settings, Edit3, Image, CreditCard, Plus, Trash2, Tag, ChevronRight, Send } from 'lucide-react';
+import { Users, CheckCircle, XCircle, Clock, Smartphone, LogOut, Settings, Edit3, Image, CreditCard, Plus, Trash2, Tag, ChevronRight, Send, Lock, User as UserIcon } from 'lucide-react';
 import { ExtendedChatMessage } from '../App';
 import { OPERATORS } from '../constants';
 
@@ -23,12 +23,12 @@ interface Props {
 }
 
 const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offers, onManageOffers, onUpdateSettings, onUpdateUser, onToggleService, onLogout, transactions, onUpdateTransaction, chatMessages, onAdminReply }) => {
-  const [activeTab, setActiveTab] = useState<'STATS' | 'REQUESTS' | 'USERS' | 'CHAT' | 'SETTINGS' | 'OFFERS'>('STATS');
+  const [activeTab, setActiveTab] = useState<'STATS' | 'REQUESTS' | 'USERS' | 'OFFERS' | 'CHAT' | 'SETTINGS'>('STATS');
   const [selectedChatUser, setSelectedChatUser] = useState<string | null>(null);
   const [replyText, setReplyText] = useState('');
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [newAdminPin, setNewAdminPin] = useState('');
 
-  // New Offer State
   const [newOffer, setNewOffer] = useState<Partial<Offer>>({ type: 'DRIVE', operator: 'gp', validity: '30 দিন' });
 
   const pendingTransactions = transactions.filter(t => t.status === 'PENDING');
@@ -42,6 +42,14 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
     ? chatMessages.filter(m => m.senderId === selectedChatUser || m.recipientId === selectedChatUser)
     : [];
 
+  const handleUpdateAdminPin = () => {
+    if (newAdminPin.trim()) {
+      onUpdateUser(user.id, { password: newAdminPin });
+      setNewAdminPin('');
+      alert("অ্যাডমিন পিন পরিবর্তন সফল হয়েছে।");
+    }
+  };
+
   return (
     <div className="flex-1 flex flex-col bg-gray-100 overflow-hidden h-full">
       <header className="bg-white border-b p-4 flex justify-between items-center sticky top-0 z-10 shadow-sm">
@@ -54,7 +62,6 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
         </button>
       </header>
 
-      {/* Admin Tabs */}
       <div className="bg-white flex border-b overflow-x-auto no-scrollbar">
         {['STATS', 'REQUESTS', 'USERS', 'OFFERS', 'CHAT', 'SETTINGS'].map((tab) => (
           <button 
@@ -196,7 +203,7 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
         {activeTab === 'REQUESTS' && (
           <div className="p-4 space-y-3">
              {pendingTransactions.map(tx => (
-               <div key={tx.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-200">
+               <div key={tx.id} className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="text-[10px] font-bold text-blue-900 uppercase">{tx.type}</p>
@@ -216,6 +223,26 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
 
         {activeTab === 'SETTINGS' && (
           <div className="p-4 space-y-4">
+             {/* Admin Profile Section */}
+             <div className="bg-white p-4 rounded-2xl border border-gray-200">
+                <h3 className="text-sm font-bold mb-4 flex items-center"><UserIcon size={16} className="mr-2"/> Admin Profile</h3>
+                <div className="space-y-4">
+                   <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase">Change Admin PIN</label>
+                      <input 
+                        type="password" 
+                        value={newAdminPin}
+                        onChange={(e) => setNewAdminPin(e.target.value)}
+                        className="w-full p-3 bg-gray-50 border rounded-xl"
+                        placeholder="নতুন পিন দিন"
+                      />
+                   </div>
+                   <button onClick={handleUpdateAdminPin} className="w-full bg-blue-900 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2">
+                      <Lock size={16} /> পিন আপডেট করুন
+                   </button>
+                </div>
+             </div>
+
              <div className="bg-white p-4 rounded-2xl border border-gray-200">
                 <h3 className="text-sm font-bold mb-4 flex items-center"><CreditCard size={16} className="mr-2"/> Payment Numbers</h3>
                 <div className="space-y-4">
@@ -248,12 +275,12 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
           <div className="p-4 space-y-4 h-full flex flex-col">
             {!selectedChatUser ? (
               <div className="bg-white rounded-2xl border border-gray-200 divide-y flex-1">
-                {userIdsInChat.map(uid => (
+                {userIdsInChat.length > 0 ? userIdsInChat.map(uid => (
                   <button key={uid} onClick={() => setSelectedChatUser(uid)} className="w-full p-4 flex items-center justify-between">
                     <span className="text-sm font-bold">{getUserById(uid)?.name || uid}</span>
                     <ChevronRight size={16}/>
                   </button>
-                ))}
+                )) : <div className="p-10 text-center text-gray-400 text-xs">No chats found.</div>}
               </div>
             ) : (
               <div className="bg-white p-4 rounded-2xl border flex-1 flex flex-col h-full overflow-hidden min-h-[400px]">

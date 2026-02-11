@@ -17,12 +17,13 @@ const Login: React.FC<Props> = ({ onLogin }) => {
     e.preventDefault();
     setIsLoading(true);
     
-    // Requested Admin Credentials: admin / 225588
-    if (phone === 'admin' && password === '225588') {
+    // Admin Credentials: 01987624041 / 225588
+    if (phone === '01987624041' && password === '225588') {
       onLogin({
         id: 'admin_master',
         name: 'Master Admin',
-        phone: 'admin',
+        phone: '01987624041',
+        password: '225588',
         role: UserRole.ADMIN,
         balance: 999999,
         driveBalance: 0,
@@ -33,12 +34,12 @@ const Login: React.FC<Props> = ({ onLogin }) => {
       return;
     }
 
-    // Standard User Login Logic
     if (phone && password) {
        onLogin({
         id: Math.random().toString(36).substring(7),
-        name: 'Account User',
+        name: 'User',
         phone: phone,
+        password: password,
         role: UserRole.USER,
         balance: 0,
         driveBalance: 0,
