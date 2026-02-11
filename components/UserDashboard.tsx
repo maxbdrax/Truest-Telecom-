@@ -1,26 +1,29 @@
 
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { User, ServiceStatus, AppSettings } from '../types';
+import { User, ServiceStatus, AppSettings, Tutorial } from '../types';
 import { SERVICES, NAV_ITEMS } from '../constants';
-import { Bell, LogOut, ChevronRight, Smartphone, Settings, X, Lock } from 'lucide-react';
+import { Bell, LogOut, ChevronRight, Smartphone, Settings, X, Lock, PlayCircle, ChevronLeft } from 'lucide-react';
 
 interface Props {
   user: User;
   services: ServiceStatus[];
   settings: AppSettings;
+  tutorials: Tutorial[];
   onLogout: () => void;
   onUpdateUser: (id: string, data: Partial<User>) => void;
 }
 
-const UserDashboard: React.FC<Props> = ({ user, services, settings, onLogout, onUpdateUser }) => {
+const UserDashboard: React.FC<Props> = ({ user, services, settings, tutorials, onLogout, onUpdateUser }) => {
   const navigate = useNavigate();
-  const [activeView, setActiveView] = useState<'HOME' | 'PROFILE'>('HOME');
+  const [activeView, setActiveView] = useState<'HOME' | 'PROFILE' | 'TUTORIALS'>('HOME');
   const [newPassword, setNewPassword] = useState('');
 
   const handleServiceClick = (serviceId: string) => {
     if (serviceId === 'chat') { navigate('/chat'); return; }
     if (serviceId === 'add_balance') { navigate('/service/add_money'); return; }
+    if (serviceId === 'tutorial') { setActiveView('TUTORIALS'); return; }
+    
     const service = services.find(s => s.id === serviceId);
     if (service && !service.isActive) {
       alert("দুঃখিত, এই সার্ভিসটি বর্তমানে বন্ধ আছে।");
@@ -39,7 +42,7 @@ const UserDashboard: React.FC<Props> = ({ user, services, settings, onLogout, on
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 pb-20 overflow-y-auto h-full">
-      {activeView === 'HOME' ? (
+      {activeView === 'HOME' && (
         <>
           {/* Header */}
           <div className="bg-gradient-to-br from-blue-900 to-blue-700 p-6 text-white rounded-b-[40px] shadow-2xl relative overflow-hidden">
@@ -108,7 +111,9 @@ const UserDashboard: React.FC<Props> = ({ user, services, settings, onLogout, on
             </div>
           </div>
         </>
-      ) : (
+      )}
+
+      {activeView === 'PROFILE' && (
         <div className="p-6">
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-black text-blue-900">আপনার প্রোফাইল</h2>
@@ -140,6 +145,46 @@ const UserDashboard: React.FC<Props> = ({ user, services, settings, onLogout, on
                 পাসওয়ার্ড আপডেট করুন
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeView === 'TUTORIALS' && (
+        <div className="p-6">
+          <div className="flex items-center gap-4 mb-8">
+            <button onClick={() => setActiveView('HOME')} className="p-2 bg-gray-100 rounded-full"><ChevronLeft size={24} /></button>
+            <h2 className="text-2xl font-black text-blue-900">টিউটোরিয়াল</h2>
+          </div>
+          
+          <div className="space-y-4">
+            {tutorials.length === 0 ? (
+              <div className="text-center py-20 text-gray-400">
+                <PlayCircle size={60} className="mx-auto opacity-20 mb-4"/>
+                <p className="font-bold">বর্তমানে কোন ভিডিও নেই</p>
+              </div>
+            ) : (
+              tutorials.map(tut => (
+                <div key={tut.id} className="bg-white p-5 rounded-[30px] shadow-lg border flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-red-100 flex items-center justify-center text-red-600">
+                      <PlayCircle size={28}/>
+                    </div>
+                    <div>
+                      <p className="font-black text-gray-800 leading-tight">{tut.title}</p>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase mt-1">Video Guide</p>
+                    </div>
+                  </div>
+                  <a 
+                    href={tut.videoUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="w-full bg-red-600 text-white text-center py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-200"
+                  >
+                    ভিডিও দেখুন
+                  </a>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}

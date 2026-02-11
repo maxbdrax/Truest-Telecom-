@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
-import { User, ServiceStatus, Transaction, ChatMessage, AppSettings, Offer } from '../types';
-import { Users, CheckCircle, XCircle, Clock, Smartphone, LogOut, Settings, Edit3, Image, CreditCard, Plus, Trash2, Tag, ChevronRight, Send, Lock, User as UserIcon, Database, Copy, AlertTriangle, ShieldCheck, Phone } from 'lucide-react';
-import { ExtendedChatMessage } from '../App';
+import { User, ServiceStatus, Transaction, ChatMessage, AppSettings, Offer, Tutorial } from '../types';
+import { Users, CheckCircle, XCircle, Clock, Smartphone, LogOut, Settings, Edit3, Image, CreditCard, Plus, Trash2, Tag, ChevronRight, Send, Lock, User as UserIcon, Database, Copy, AlertTriangle, ShieldCheck, Phone, MessageSquare, PlayCircle } from 'lucide-react';
 import { OPERATORS } from '../constants';
 
 interface Props {
@@ -11,22 +10,26 @@ interface Props {
   services: ServiceStatus[];
   settings: AppSettings;
   offers: Offer[];
+  tutorials: Tutorial[];
   onManageOffers: (action: 'ADD' | 'DELETE', offer?: Offer) => void;
+  onManageTutorials: (action: 'ADD' | 'DELETE', tutorial?: Tutorial) => void;
   onUpdateSettings: (s: Partial<AppSettings>) => void;
   onUpdateUser: (id: string, data: Partial<User>) => void;
   onToggleService: (id: string) => void;
   onLogout: () => void;
   transactions: Transaction[];
   onUpdateTransaction: (txId: string, status: 'SUCCESS' | 'FAILED') => void;
-  chatMessages: ExtendedChatMessage[];
-  onAdminReply: (text: string, isAdmin: boolean, recipientId?: string) => void;
+  chatMessages: ChatMessage[];
+  onAdminReply: (text: string, recipientId: string) => void;
 }
 
-const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offers, onManageOffers, onUpdateSettings, onUpdateUser, onToggleService, onLogout, transactions, onUpdateTransaction, chatMessages, onAdminReply }) => {
-  const [activeTab, setActiveTab] = useState<'STATS' | 'REQUESTS' | 'USERS' | 'OFFERS' | 'DATABASE' | 'SETTINGS'>('STATS');
+const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offers, tutorials, onManageOffers, onManageTutorials, onUpdateSettings, onUpdateUser, onToggleService, onLogout, transactions, onUpdateTransaction, chatMessages, onAdminReply }) => {
+  const [activeTab, setActiveTab] = useState<'STATS' | 'REQUESTS' | 'USERS' | 'OFFERS' | 'DATABASE' | 'SETTINGS' | 'MESSAGES' | 'TUTORIALS'>('STATS');
   
   // Settings State
   const [tempSettings, setTempSettings] = useState<AppSettings>(settings);
+  const [selectedUserForChat, setSelectedUserForChat] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
   
   // Offer Add State
   const [newOffer, setNewOffer] = useState<Partial<Offer>>({
@@ -36,6 +39,11 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
     price: 0,
     regularPrice: 0,
     validity: '৩০ দিন'
+  });
+
+  const [newTutorial, setNewTutorial] = useState<Partial<Tutorial>>({
+    title: '',
+    videoUrl: ''
   });
 
   const handleAddOffer = (e: React.FormEvent) => {
@@ -49,9 +57,27 @@ const AdminDashboard: React.FC<Props> = ({ user, users, services, settings, offe
     alert("অফার যোগ করা হয়েছে!");
   };
 
+  const handleAddTutorial = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newTutorial.title || !newTutorial.videoUrl) return;
+    onManageTutorials('ADD', {
+      ...newTutorial,
+      id: Math.random().toString(36).substr(2, 9)
+    } as Tutorial);
+    setNewTutorial({ title: '', videoUrl: '' });
+    alert("টিউটোরিয়াল যোগ করা হয়েছে!");
+  };
+
   const handleSaveSettings = () => {
     onUpdateSettings(tempSettings);
     alert("সেটিংস আপডেট করা হয়েছে!");
+  };
+
+  const handleSendReply = () => {
+    if (selectedUserForChat && replyText.trim()) {
+      onAdminReply(replyText, selectedUserForChat);
+      setReplyText('');
+    }
   };
 
   const permissionFixSql = `-- ১. পাবলিক স্কিমার পারমিশন তালা খুলে দেওয়া
@@ -66,6 +92,9 @@ NOTIFY pgrst, 'reload schema';`;
   };
 
   const pendingTransactions = transactions.filter(t => t.status === 'PENDING');
+  
+  // Group messages by user
+  const chatUsers = users.filter(u => u.role !== 'ADMIN' && chatMessages.some(m => m.senderId === u.id || m.recipientId === u.id));
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50 overflow-hidden h-full">
@@ -87,6 +116,8 @@ NOTIFY pgrst, 'reload schema';`;
           { id: 'REQUESTS', label: `Req (${pendingTransactions.length})`, icon: <Clock size={14}/> },
           { id: 'USERS', label: 'Users', icon: <Users size={14}/> },
           { id: 'OFFERS', label: 'Offers', icon: <Tag size={14}/> },
+          { id: 'MESSAGES', label: 'Chats', icon: <MessageSquare size={14}/> },
+          { id: 'TUTORIALS', label: 'Vids', icon: <PlayCircle size={14}/> },
           { id: 'SETTINGS', label: 'Settings', icon: <Settings size={14}/> },
           { id: 'DATABASE', label: 'DB Fix', icon: <ShieldCheck size={14}/> },
         ].map((tab) => (
@@ -103,6 +134,118 @@ NOTIFY pgrst, 'reload schema';`;
 
       <div className="flex-1 overflow-y-auto pb-24 bg-gray-50/50">
         
+        {/* Messages Tab */}
+        {activeTab === 'MESSAGES' && (
+          <div className="flex h-full">
+            <div className={`w-full ${selectedUserForChat ? 'hidden' : 'block'} md:w-1/3 md:block bg-white border-r overflow-y-auto`}>
+              <h3 className="p-4 font-black text-xs uppercase text-gray-400">মেসেজ লিস্ট</h3>
+              {chatUsers.map(u => (
+                <button key={u.id} onClick={() => setSelectedUserForChat(u.id)} className={`w-full p-4 flex items-center gap-3 border-b hover:bg-gray-50 ${selectedUserForChat === u.id ? 'bg-blue-50' : ''}`}>
+                  <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center font-black text-blue-900">{u.name[0]}</div>
+                  <div className="text-left">
+                    <p className="text-sm font-black text-gray-800">{u.name}</p>
+                    <p className="text-[10px] text-gray-400 font-bold">{u.phone}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <div className={`${selectedUserForChat ? 'flex' : 'hidden'} md:flex flex-col flex-1 bg-gray-50 h-full`}>
+              {selectedUserForChat ? (
+                <>
+                  <div className="p-3 bg-white border-b flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => setSelectedUserForChat(null)} className="md:hidden p-2"><ChevronRight className="rotate-180"/></button>
+                      <p className="font-black text-sm">{users.find(u => u.id === selectedUserForChat)?.name}</p>
+                    </div>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    {chatMessages.filter(m => m.senderId === selectedUserForChat || m.recipientId === selectedUserForChat).map(m => (
+                      <div key={m.id} className={`flex ${m.isAdmin ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`p-3 rounded-2xl max-w-[80%] text-xs font-bold ${m.isAdmin ? 'bg-blue-900 text-white' : 'bg-white text-gray-800 border'}`}>
+                          {m.text}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-4 bg-white border-t flex gap-2">
+                    <input 
+                      type="text" 
+                      value={replyText} 
+                      onChange={e => setReplyText(e.target.value)}
+                      placeholder="মেসেজ লিখুন..."
+                      className="flex-1 p-3 rounded-xl bg-gray-50 border outline-none text-xs font-bold"
+                    />
+                    <button onClick={handleSendReply} className="p-3 bg-blue-900 text-white rounded-xl">
+                      <Send size={18}/>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center opacity-20">
+                  <MessageSquare size={80}/>
+                  <p className="font-black text-xs uppercase mt-4">চ্যাট সিলেক্ট করুন</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Tutorials Tab */}
+        {activeTab === 'TUTORIALS' && (
+          <div className="p-6 space-y-6">
+            <div className="bg-white p-6 rounded-[32px] shadow-sm border border-gray-100">
+              <h3 className="text-lg font-black text-gray-800 mb-6">নতুন টিউটোরিয়াল এড করুন</h3>
+              <form onSubmit={handleAddTutorial} className="space-y-4">
+                <div>
+                  <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">ভিডিও টাইটেল</label>
+                  <input 
+                    type="text" 
+                    value={newTutorial.title} 
+                    onChange={e => setNewTutorial({...newTutorial, title: e.target.value})}
+                    className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    placeholder="কিভাবে ব্যালেন্স এড করবেন?"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[9px] font-black text-gray-400 uppercase mb-2">ভিডিও লিঙ্ক (Youtube)</label>
+                  <input 
+                    type="text" 
+                    value={newTutorial.videoUrl} 
+                    onChange={e => setNewTutorial({...newTutorial, videoUrl: e.target.value})}
+                    className="w-full p-3 rounded-xl bg-gray-50 border font-bold text-xs"
+                    placeholder="https://youtube.com/..."
+                    required
+                  />
+                </div>
+                <button type="submit" className="w-full bg-blue-900 text-white py-3 rounded-xl font-black text-[10px] uppercase tracking-widest">
+                   ভিডিও সেভ করুন
+                </button>
+              </form>
+            </div>
+
+            <div className="space-y-4">
+              <h3 className="text-sm font-black text-gray-800 px-2 uppercase tracking-widest">বর্তমান ভিডিওসমূহ ({tutorials.length})</h3>
+              {tutorials.map(tut => (
+                <div key={tut.id} className="bg-white p-4 rounded-2xl border flex justify-between items-center shadow-sm">
+                   <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center text-red-600">
+                         <PlayCircle size={24} />
+                      </div>
+                      <div>
+                        <p className="text-xs font-black text-gray-800">{tut.title}</p>
+                        <p className="text-[9px] text-gray-400 font-bold truncate max-w-[150px]">{tut.videoUrl}</p>
+                      </div>
+                   </div>
+                   <button onClick={() => onManageTutorials('DELETE', tut)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg">
+                     <Trash2 size={18} />
+                   </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Settings Tab */}
         {activeTab === 'SETTINGS' && (
           <div className="p-6 space-y-6">

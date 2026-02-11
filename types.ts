@@ -56,9 +56,16 @@ export interface Offer {
 export interface ChatMessage {
   id: string;
   senderId: string;
+  recipientId?: string;
   text: string;
   timestamp: string;
   isAdmin: boolean;
+}
+
+export interface Tutorial {
+  id: string;
+  title: string;
+  videoUrl: string;
 }
 
 export interface Loan {

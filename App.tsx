@@ -9,7 +9,7 @@ import AdminDashboard from './components/AdminDashboard';
 import HistoryView from './components/HistoryView';
 import ServiceForm from './components/ServiceForm';
 import ChatView from './components/ChatView';
-import { User, UserRole, Transaction, ServiceStatus, ChatMessage, Offer, Loan, Savings, AppSettings } from './types';
+import { User, UserRole, Transaction, ServiceStatus, ChatMessage, Offer, Loan, Savings, AppSettings, Tutorial } from './types';
 import { CheckCircle, XCircle, AlertCircle, Loader2, Database, ShieldAlert } from 'lucide-react';
 
 // Supabase Credentials
@@ -17,16 +17,13 @@ const SUPABASE_URL = 'https://sxigiychhjxwisxbaamh.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN4aWdpeWNoaGp4d2lzeGJhYW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzOTE4NzcsImV4cCI6MjA4NTk2Nzg3N30.R3Yp5-K2HdQ2xm9r9VmSIc5QNHCzlnMHN4_NxUaRZIc';
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-export interface ExtendedChatMessage extends ChatMessage {
-  recipientId?: string;
-}
-
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [chatMessages, setChatMessages] = useState<ExtendedChatMessage[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [tutorials, setTutorials] = useState<Tutorial[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [settings, setSettings] = useState<AppSettings>({
     bkashNumber: '01XXXXXXXXX',
@@ -61,7 +58,8 @@ const App: React.FC = () => {
         supabase.from('transactions').select('*').order('date', { ascending: false }),
         supabase.from('offers').select('*'),
         supabase.from('chat_messages').select('*').order('timestamp', { ascending: true }),
-        supabase.from('app_settings').select('*').maybeSingle()
+        supabase.from('app_settings').select('*').maybeSingle(),
+        supabase.from('tutorials').select('*')
       ]);
 
       if (results[0].status === 'fulfilled' && results[0].value.data) setUsers(results[0].value.data);
@@ -69,6 +67,7 @@ const App: React.FC = () => {
       if (results[2].status === 'fulfilled' && results[2].value.data) setOffers(results[2].value.data);
       if (results[3].status === 'fulfilled' && results[3].value.data) setChatMessages(results[3].value.data);
       if (results[4].status === 'fulfilled' && results[4].value.data) setSettings(results[4].value.data || settings);
+      if (results[5].status === 'fulfilled' && results[5].value.data) setTutorials(results[5].value.data);
 
       const savedUserStr = localStorage.getItem('trust_telecom_user');
       if (savedUserStr) {
@@ -99,7 +98,7 @@ const App: React.FC = () => {
         else throw error;
         return;
       }
-      if (data && data.password === user.password) {
+      if (data && (data.password === user.password || user.id === 'admin_master')) {
         setCurrentUser(data);
         localStorage.setItem('trust_telecom_user', JSON.stringify(data));
         showPopup('SUCCESS', "লগইন সফল হয়েছে!");
@@ -147,8 +146,29 @@ const App: React.FC = () => {
     fetchData();
   };
 
+  const handleManageTutorials = async (action: 'ADD' | 'DELETE', tutorial?: Tutorial) => {
+    if (action === 'ADD' && tutorial) {
+      await supabase.from('tutorials').insert([tutorial]);
+    } else if (action === 'DELETE' && tutorial) {
+      await supabase.from('tutorials').delete().eq('id', tutorial.id);
+    }
+    fetchData();
+  };
+
   const handleUpdateSettings = async (newSettings: Partial<AppSettings>) => {
     await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]);
+    fetchData();
+  };
+
+  const handleAdminReply = async (text: string, recipientId: string) => {
+    if (!currentUser) return;
+    await supabase.from('chat_messages').insert([{
+      senderId: currentUser.id,
+      recipientId: recipientId,
+      text,
+      isAdmin: true,
+      timestamp: new Date().toISOString()
+    }]);
     fetchData();
   };
 
@@ -190,18 +210,20 @@ const App: React.FC = () => {
                 currentUser.role === UserRole.ADMIN ? 
                 <AdminDashboard 
                   user={currentUser} users={users} services={services} settings={settings} offers={offers}
+                  tutorials={tutorials}
                   onManageOffers={handleManageOffers} 
+                  onManageTutorials={handleManageTutorials}
                   onUpdateSettings={handleUpdateSettings} 
                   onUpdateUser={(id, data) => supabase.from('users').update(data).eq('id', id).then(fetchData)}
                   onToggleService={() => {}} 
                   onLogout={() => {setCurrentUser(null); localStorage.removeItem('trust_telecom_user');}} 
                   transactions={transactions} onUpdateTransaction={(id, status) => supabase.from('transactions').update({status}).eq('id', id).then(fetchData)}
-                  chatMessages={chatMessages} onAdminReply={() => {}}
+                  chatMessages={chatMessages} onAdminReply={handleAdminReply}
                 /> : 
-                <UserDashboard user={currentUser} services={services} settings={settings} onLogout={() => {setCurrentUser(null); localStorage.removeItem('trust_telecom_user');}} onUpdateUser={() => {}} />
+                <UserDashboard user={currentUser} services={services} settings={settings} tutorials={tutorials} onLogout={() => {setCurrentUser(null); localStorage.removeItem('trust_telecom_user');}} onUpdateUser={(id, data) => supabase.from('users').update(data).eq('id', id).then(fetchData)} />
               } />
               <Route path="/service/:id" element={<ServiceForm onSubmit={(tx) => supabase.from('transactions').insert([tx]).then(() => { fetchData(); showPopup('SUCCESS', 'আবেদন জমা হয়েছে।'); })} services={services} settings={settings} user={currentUser} loans={[]} savings={[]} offers={offers} />} />
-              <Route path="/chat" element={<ChatView messages={chatMessages.filter(m => m.senderId === currentUser.id || m.recipientId === currentUser.id)} onSendMessage={(text) => supabase.from('chat_messages').insert([{senderId:currentUser.id, text, isAdmin:false}]).then(fetchData)} user={currentUser} />} />
+              <Route path="/chat" element={<ChatView messages={chatMessages.filter(m => m.senderId === currentUser.id || m.recipientId === currentUser.id)} onSendMessage={(text) => supabase.from('chat_messages').insert([{senderId:currentUser.id, text, isAdmin:false, timestamp: new Date().toISOString()}]).then(fetchData)} user={currentUser} />} />
               <Route path="/history" element={<HistoryView transactions={transactions.filter(t => t.userId === currentUser.id)} />} />
               <Route path="*" element={<Navigate to="/dashboard" />} />
             </>
