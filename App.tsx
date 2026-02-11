@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { createClient } from '@supabase/supabase-js';
 import Login from './components/Login';
 import Register from './components/Register';
 import UserDashboard from './components/UserDashboard';
@@ -11,34 +12,28 @@ import ChatView from './components/ChatView';
 import { User, UserRole, Transaction, ServiceStatus, ChatMessage, Offer, Loan, Savings, AppSettings } from './types';
 import { CheckCircle, XCircle } from 'lucide-react';
 
+// Supabase Initialization with user-provided credentials
+const SUPABASE_URL = 'https://etcnunymawlopmrwqhkn.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImV0Y251bnltYXdsb3BtcndxaGtuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk3NDcxNTAsImV4cCI6MjA4NTMyMzE1MH0.wPvxi7g-ZOLzrX51d5-2B4_LfqZgXw_1Otw0ZIts-_A';
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 export interface ExtendedChatMessage extends ChatMessage {
   recipientId?: string;
 }
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([
-    { id: '1', name: 'A M IMRAN Dev', phone: '01863575188', role: UserRole.ADMIN, balance: 5000, driveBalance: 2500, isBlocked: false },
-    { id: '2', name: 'Trust User', phone: '01700000000', role: UserRole.USER, balance: 100, driveBalance: 0, isBlocked: false }
-  ]);
+  const [users, setUsers] = useState<User[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [chatMessages, setChatMessages] = useState<ExtendedChatMessage[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [savings, setSavings] = useState<Savings[]>([]);
-  const [offers, setOffers] = useState<Offer[]>([
-    { id: '1', type: 'DRIVE', operator: 'robi', title: '20 জিবি 100 মিনিট', price: 350, regularPrice: 380, validity: '30 দিন' },
-    { id: '2', type: 'DRIVE', operator: 'robi', title: '5 GB 50 Minute', price: 130, regularPrice: 150, validity: '30 দিন' },
-    { id: '3', type: 'DRIVE', operator: 'robi', title: '50 GB 300 Minute', price: 510, regularPrice: 550, validity: '30 দিন' },
-    { id: '4', type: 'DRIVE', operator: 'robi', title: 'Unlimited GB', price: 999, regularPrice: 1190, validity: '30 দিন' },
-  ]);
+  const [offers, setOffers] = useState<Offer[]>([]);
   const [settings, setSettings] = useState<AppSettings>({
     bkashNumber: '01875242742',
     nagadNumber: '01712345678',
     rocketNumber: '01900000000',
-    banners: [
-      'https://img.freepik.com/free-vector/cashback-concept-illustration_114360-5206.jpg',
-      'https://t3.ftcdn.net/jpg/04/65/46/52/360_F_465465250_Suj9W9ycfn1624zYcfZ9A9mIcy3m89Vv.jpg'
-    ]
+    banners: []
   });
   
   const [services, setServices] = useState<ServiceStatus[]>([
@@ -55,29 +50,57 @@ const App: React.FC = () => {
 
   const [notification, setNotification] = useState<{show: boolean, type: 'SUCCESS' | 'FAILED', message: string}>({show: false, type: 'SUCCESS', message: ''});
 
+  // Data Fetching from Supabase
   useEffect(() => {
-    const savedUser = localStorage.getItem('trust_telecom_user');
-    if (savedUser) {
-      const parsed = JSON.parse(savedUser);
-      const found = users.find(u => u.phone === parsed.phone);
-      if (found) setCurrentUser(found);
-    }
-  }, [users]);
+    const fetchData = async () => {
+      try {
+        const { data: userData } = await supabase.from('users').select('*');
+        if (userData) setUsers(userData);
+
+        const { data: txData } = await supabase.from('transactions').select('*').order('date', { ascending: false });
+        if (txData) setTransactions(txData);
+
+        const { data: offerData } = await supabase.from('offers').select('*');
+        if (offerData) setOffers(offerData);
+
+        const { data: chatData } = await supabase.from('chat_messages').select('*').order('timestamp', { ascending: true });
+        if (chatData) setChatMessages(chatData);
+
+        const { data: settingsData } = await supabase.from('app_settings').select('*').single();
+        if (settingsData) setSettings(settingsData);
+
+        // Check local auth
+        const savedUser = localStorage.getItem('trust_telecom_user');
+        if (savedUser && userData) {
+          const parsed = JSON.parse(savedUser);
+          const found = userData.find((u: User) => u.phone === parsed.phone);
+          if (found) setCurrentUser(found);
+        }
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+
+    fetchData();
+  }, []);
 
   const showPopup = (type: 'SUCCESS' | 'FAILED', message: string) => {
     setNotification({ show: true, type, message });
     setTimeout(() => setNotification(prev => ({ ...prev, show: false })), 3000);
   };
 
-  const handleLogin = (user: User) => {
-    const existing = users.find(u => u.phone === user.phone);
-    if (existing) {
-      setCurrentUser(existing);
-      localStorage.setItem('trust_telecom_user', JSON.stringify(existing));
+  const handleLogin = async (user: User) => {
+    const { data, error } = await supabase.from('users').select('*').eq('phone', user.phone).single();
+    if (data) {
+      setCurrentUser(data);
+      localStorage.setItem('trust_telecom_user', JSON.stringify(data));
     } else {
-      setUsers(prev => [...prev, user]);
-      setCurrentUser(user);
-      localStorage.setItem('trust_telecom_user', JSON.stringify(user));
+      const { data: newUser, error: insError } = await supabase.from('users').insert([{ ...user }]).select().single();
+      if (newUser) {
+        setCurrentUser(newUser);
+        setUsers(prev => [...prev, newUser]);
+        localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
+      }
     }
   };
 
@@ -86,69 +109,84 @@ const App: React.FC = () => {
     localStorage.removeItem('trust_telecom_user');
   };
 
-  const addTransaction = (tx: Omit<Transaction, 'id' | 'date' | 'status'>) => {
-    const newTx: Transaction = {
+  const addTransaction = async (tx: Omit<Transaction, 'id' | 'date' | 'status'>) => {
+    const newTx = {
       ...tx,
-      id: Math.random().toString(36).substr(2, 9),
       date: new Date().toISOString(),
       status: 'PENDING'
     };
-    setTransactions([newTx, ...transactions]);
-    showPopup('SUCCESS', "অনুরোধটি সফলভাবে পাঠানো হয়েছে। অপেক্ষ করুন।");
+    const { data, error } = await supabase.from('transactions').insert([newTx]).select().single();
+    if (data) {
+      setTransactions([data, ...transactions]);
+      showPopup('SUCCESS', "অনুরোধটি সফলভাবে পাঠানো হয়েছে। অপেক্ষ করুন।");
+    }
   };
 
-  const updateTransactionStatus = (txId: string, status: 'SUCCESS' | 'FAILED') => {
-    setTransactions(prev => prev.map(tx => {
-      if (tx.id === txId) {
-        if (status === 'SUCCESS') {
+  const updateTransactionStatus = async (txId: string, status: 'SUCCESS' | 'FAILED') => {
+    const { data: updatedTx, error } = await supabase.from('transactions').update({ status }).eq('id', txId).select().single();
+    if (updatedTx) {
+      if (status === 'SUCCESS') {
+        const tx = updatedTx as Transaction;
+        const targetUser = users.find(u => u.id === tx.userId);
+        if (targetUser) {
+          let newBalance = targetUser.balance;
           if (tx.type === 'ADD_MONEY') {
-            setUsers(currentUsers => currentUsers.map(u => u.id === tx.userId ? { ...u, balance: u.balance + tx.amount } : u));
+            newBalance += tx.amount;
           } else {
-             setUsers(currentUsers => currentUsers.map(u => {
-              if (u.id === tx.userId) {
-                const modifier = (['RECHARGE', 'DRIVE_PACK', 'SEND_MONEY', 'BILL_PAY', 'LOAN_INSTALLMENT', 'REGULAR_PACK'].includes(tx.type) ? -1 : 1);
-                return { ...u, balance: u.balance + (tx.amount * modifier) };
-              }
-              return u;
-            }));
+            const modifier = (['RECHARGE', 'DRIVE_PACK', 'SEND_MONEY', 'BILL_PAY', 'LOAN_INSTALLMENT', 'REGULAR_PACK'].includes(tx.type) ? -1 : 1);
+            newBalance += (tx.amount * modifier);
           }
-          showPopup('SUCCESS', `Transaction approved.`);
-        } else {
-          showPopup('FAILED', `Transaction rejected.`);
+          const { data: updatedUser } = await supabase.from('users').update({ balance: newBalance }).eq('id', tx.userId).select().single();
+          if (updatedUser) {
+            setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
+          }
         }
-        return { ...tx, status };
+        showPopup('SUCCESS', "অনুমোদন সফল হয়েছে");
+      } else {
+        showPopup('FAILED', "অনুরোধটি বাতিল করা হয়েছে");
       }
-      return tx;
-    }));
+      setTransactions(prev => prev.map(tx => tx.id === txId ? updatedTx : tx));
+    }
   };
 
-  const updateUser = (userId: string, data: Partial<User>) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...data } : u));
-    showPopup('SUCCESS', "ইউজার আপডেট করা হয়েছে");
+  const updateUser = async (userId: string, data: Partial<User>) => {
+    const { data: updated, error } = await supabase.from('users').update(data).eq('id', userId).select().single();
+    if (updated) {
+      setUsers(prev => prev.map(u => u.id === userId ? updated : u));
+      showPopup('SUCCESS', "ইউজার আপডেট করা হয়েছে");
+    }
   };
 
-  const sendMessage = (text: string, isAdmin: boolean = false, recipientId?: string) => {
-    const msg: ExtendedChatMessage = {
-      id: Math.random().toString(),
-      senderId: isAdmin ? 'ADMIN' : (currentUser?.id || '2'),
+  const sendMessage = async (text: string, isAdmin: boolean = false, recipientId?: string) => {
+    const msg = {
+      senderId: isAdmin ? 'ADMIN' : (currentUser?.id || ''),
       recipientId: isAdmin ? recipientId : 'ADMIN',
       text,
       timestamp: new Date().toISOString(),
       isAdmin
     };
-    setChatMessages(prev => [...prev, msg]);
+    const { data, error } = await supabase.from('chat_messages').insert([msg]).select().single();
+    if (data) {
+      setChatMessages(prev => [...prev, data]);
+    }
   };
 
-  const updateSettings = (newSettings: Partial<AppSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
-    showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে");
+  const updateSettings = async (newSettings: Partial<AppSettings>) => {
+    const updated = { ...settings, ...newSettings };
+    const { data, error } = await supabase.from('app_settings').upsert([updated]).select().single();
+    if (data) {
+      setSettings(data);
+      showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে");
+    }
   };
 
-  const manageOffers = (action: 'ADD' | 'DELETE', offer?: Offer) => {
+  const manageOffers = async (action: 'ADD' | 'DELETE', offer?: Offer) => {
     if (action === 'ADD' && offer) {
-      setOffers([...offers, { ...offer, id: Math.random().toString() }]);
+      const { data, error } = await supabase.from('offers').insert([offer]).select().single();
+      if (data) setOffers([...offers, data]);
     } else if (action === 'DELETE' && offer) {
-      setOffers(offers.filter(o => o.id !== offer.id));
+      const { error } = await supabase.from('offers').delete().eq('id', offer.id);
+      if (!error) setOffers(offers.filter(o => o.id !== offer.id));
     }
   };
 
