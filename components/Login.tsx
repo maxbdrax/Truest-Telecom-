@@ -10,79 +10,88 @@ interface Props {
 const Login: React.FC<Props> = ({ onLogin }) => {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simple mock logic
-    if (phone === '01863575188' && password === 'admin') {
+    setIsLoading(true);
+    
+    // Check for the specific admin credential requested
+    if (phone === 'admin' && password === '225588') {
       onLogin({
-        id: '1',
-        name: 'A M IMRAN Dev',
-        phone: '01863575188',
+        id: 'admin_master',
+        name: 'Master Admin',
+        phone: 'admin',
         role: UserRole.ADMIN,
-        balance: 5000,
-        driveBalance: 2500,
+        balance: 99999,
+        driveBalance: 99999,
         isBlocked: false
       });
       navigate('/dashboard');
-    } else if (phone && password) {
+      setIsLoading(false);
+      return;
+    }
+
+    // Otherwise standard user logic
+    if (phone && password) {
        onLogin({
-        id: '2',
-        name: 'Trust User',
+        id: Math.random().toString(36).substring(7),
+        name: 'Account Owner',
         phone: phone,
         role: UserRole.USER,
-        balance: 100,
+        balance: 0,
         driveBalance: 0,
         isBlocked: false
       });
       navigate('/dashboard');
     }
+    setIsLoading(false);
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-b from-blue-900 to-blue-700 p-6 text-white">
-      <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold mb-2">Trust Telecom</h1>
-        <p className="text-blue-200">সততাই আমাদের মূল লক্ষ্য</p>
+      <div className="mb-10 text-center animate-pulse">
+        <h1 className="text-4xl font-black mb-2 tracking-tight">Trust Telecom</h1>
+        <p className="text-blue-200 text-sm font-medium">সততাই আমাদের মূল লক্ষ্য</p>
       </div>
       
-      <form onSubmit={handleSubmit} className="w-full space-y-4">
+      <form onSubmit={handleSubmit} className="w-full space-y-5">
         <div>
-          <label className="block text-sm font-medium mb-1">Phone Number</label>
+          <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-2">Phone Number</label>
           <input 
             type="text" 
             value={phone}
             onChange={(e) => setPhone(e.target.value)}
-            className="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-white/50"
-            placeholder="01xxxxxxxxx"
+            className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all font-bold"
+            placeholder="01XXXXXXXXX"
             required
           />
         </div>
         <div>
-          <label className="block text-sm font-medium mb-1">Password</label>
+          <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-2">Password</label>
           <input 
             type="password" 
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-3 rounded-lg bg-white/20 border border-white/30 text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-white/50"
+            className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all font-bold"
             placeholder="••••••••"
             required
           />
         </div>
         <button 
           type="submit" 
-          className="w-full bg-white text-blue-900 font-bold py-3 rounded-lg hover:bg-blue-50 transition-colors shadow-lg"
+          disabled={isLoading}
+          className="w-full bg-white text-blue-900 font-black py-4 rounded-2xl hover:bg-blue-50 transition-all shadow-2xl active:scale-95 disabled:opacity-50"
         >
-          Login
+          {isLoading ? 'প্রবেশ করা হচ্ছে...' : 'LOGIN'}
         </button>
       </form>
       
-      <div className="mt-6 text-center">
-        <p className="text-sm text-blue-100">
-          Don't have an account? <Link to="/register" className="font-bold underline">Register</Link>
+      <div className="mt-8 text-center">
+        <p className="text-sm text-blue-100 font-medium">
+          Don't have an account? <Link to="/register" className="font-black text-white underline underline-offset-4">Register Now</Link>
         </p>
-        <p className="mt-4 text-xs text-blue-300">Admin Tip: Use 01863575188 / admin</p>
       </div>
     </div>
   );
