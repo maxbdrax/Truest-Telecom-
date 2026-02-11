@@ -10,6 +10,7 @@ export interface User {
   name: string;
   phone: string;
   password?: string;
+  payPassword?: string; // Transaction PIN
   role: UserRole;
   balance: number;
   driveBalance: number;

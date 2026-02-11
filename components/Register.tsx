@@ -11,19 +11,29 @@ const Register: React.FC<Props> = ({ onRegister }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
+  const [payPassword, setPayPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !phone || !password) return;
+    if (!name || !phone || !password || !payPassword) {
+      alert("সবগুলো ঘর পূরণ করুন");
+      return;
+    }
     
+    if (payPassword.length < 4) {
+      alert("লেনদেন পিন কমপক্ষে ৪ সংখ্যার হতে হবে");
+      return;
+    }
+
     setIsLoading(true);
     try {
       await onRegister({
         name,
         phone,
         password,
+        payPassword,
         role: UserRole.USER,
         balance: 0,
         driveBalance: 0,
@@ -66,16 +76,30 @@ const Register: React.FC<Props> = ({ onRegister }) => {
             required
           />
         </div>
-        <div>
-          <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-1">Password</label>
-          <input 
-            type="password" 
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all font-bold"
-            placeholder="••••••••"
-            required
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-1">Login Password</label>
+            <input 
+              type="password" 
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all font-bold"
+              placeholder="••••••••"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-blue-100 uppercase tracking-widest mb-1">Transaction PIN</label>
+            <input 
+              type="password" 
+              value={payPassword}
+              onChange={(e) => setPayPassword(e.target.value)}
+              className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-blue-300 focus:outline-none focus:ring-2 focus:ring-white/40 transition-all font-bold"
+              placeholder="1234"
+              maxLength={6}
+              required
+            />
+          </div>
         </div>
         <button 
           type="submit" 

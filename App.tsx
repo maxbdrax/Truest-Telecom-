@@ -81,7 +81,7 @@ const App: React.FC = () => {
           }
         }
       } catch (err: any) {
-        setError("সিস্টেম লোড করতে সমস্যা হচ্ছে। ইন্টারনেট কানেকশন চেক করুন।");
+        setError("সিস্টেম লোড করতে সমস্যা হচ্ছে।");
       } finally {
         setIsLoading(false);
       }
@@ -109,35 +109,38 @@ const App: React.FC = () => {
         setCurrentUser(data);
         localStorage.setItem('trust_telecom_user', JSON.stringify(data));
       } else {
-        showPopup('FAILED', "এই নাম্বারে কোনো অ্যাকাউন্ট নেই। রেজিস্ট্রেশন করুন।");
+        showPopup('FAILED', "অ্যাকাউন্ট নেই। রেজিস্ট্রেশন করুন।");
       }
     } catch (e: any) {
-      showPopup('FAILED', `লগইন ব্যর্থ। আপনার ডেটাবেসে কি 'password' কলাম আছে?`);
+      showPopup('FAILED', `লগইন ব্যর্থ। ডেটাবেস চেক করুন।`);
     }
   };
 
   const handleRegister = async (userData: Omit<User, 'id'>) => {
     try {
-      const tempId = 'U' + Math.floor(Math.random() * 100000);
+      // Generate ID as string (Not UUID)
+      const tempId = 'U' + Math.floor(10000 + Math.random() * 90000);
       const userToInsert = { ...userData, id: tempId };
 
       const { data: existing, error: checkError } = await supabase.from('users').select('id').eq('phone', userData.phone).maybeSingle();
       if (checkError) throw checkError;
       
       if (existing) {
-        showPopup('FAILED', "এই নাম্বারে ইতিমধ্যে অ্যাকাউন্ট আছে। লগইন করুন।");
+        showPopup('FAILED', "ইতিমধ্যে অ্যাকাউন্ট আছে। লগইন করুন।");
         return;
       }
 
       const { data: newUser, error: regError } = await supabase.from('users').insert([userToInsert]).select().single();
       
       if (regError) {
-        console.error("Registration Critical Error:", regError);
-        let msg = `রেজিস্ট্রেশন ব্যর্থ: ${regError.message}`;
-        if (regError.message.includes('password') || regError.code === 'PGRST100') {
-          msg = "আপনার সুপাবেজ ডেটাবেসে 'password' কলামটি নেই। অ্যাডমিন প্যানেলের 'Database Fix' ট্যাব থেকে SQL কোড নিয়ে সুপাবেজে রান দিন।";
+        console.error("Supabase Reg Error:", regError);
+        let msg = regError.message;
+        if (regError.message.includes('payPassword')) {
+          msg = "আপনার ডেটাবেসে 'payPassword' কলামটি নেই। অ্যাডমিন প্যানেলের 'Database Fix' ট্যাবে গিয়ে SQL রান করুন এবং 'NOTIFY' কমান্ডটি ব্যবহার করুন।";
+        } else if (regError.message.includes('uuid')) {
+          msg = "আপনার 'id' কলামটি UUID হিসেবে আছে। এটিকে TEXT এ পরিবর্তন করতে হবে। অ্যাডমিন প্যানেল দেখুন।";
         }
-        showPopup('FAILED', msg);
+        showPopup('FAILED', `রেজিস্ট্রেশন ব্যর্থ: ${msg}`);
         return;
       }
       
@@ -145,7 +148,7 @@ const App: React.FC = () => {
         setCurrentUser(newUser);
         setUsers(prev => [...prev, newUser]);
         localStorage.setItem('trust_telecom_user', JSON.stringify(newUser));
-        showPopup('SUCCESS', "অভিনন্দন! রেজিস্ট্রেশন সফল হয়েছে।");
+        showPopup('SUCCESS', "রেজিস্ট্রেশন সফল হয়েছে!");
       }
     } catch (e: any) {
       showPopup('FAILED', `ত্রুটি: ${e.message || "সার্ভার সংযোগ সমস্যা"}`);
@@ -164,10 +167,10 @@ const App: React.FC = () => {
       if (txError) throw txError;
       if (data) {
         setTransactions(prev => [data, ...prev]);
-        showPopup('SUCCESS', "অনুরোধটি পাঠানো হয়েছে।");
+        showPopup('SUCCESS', "অনুরোধ পাঠানো হয়েছে।");
       }
     } catch (e: any) {
-      showPopup('FAILED', `অনুরোধ পাঠাতে সমস্যা। টেবিল ঠিক আছে তো?`);
+      showPopup('FAILED', `অনুরোধ ব্যর্থ হয়েছে।`);
     }
   };
 
@@ -190,7 +193,7 @@ const App: React.FC = () => {
           }
         }
         setTransactions(prev => prev.map(tx => tx.id === txId ? updatedTx : tx));
-        showPopup('SUCCESS', "সফলভাবে আপডেট করা হয়েছে।");
+        showPopup('SUCCESS', "আপডেট সম্পন্ন।");
       }
     } catch (e) { console.error(e); }
   };
@@ -205,10 +208,10 @@ const App: React.FC = () => {
           setCurrentUser(updated);
           localStorage.setItem('trust_telecom_user', JSON.stringify(updated));
         }
-        showPopup('SUCCESS', "আপডেট সফল হয়েছে।");
+        showPopup('SUCCESS', "আপডেট সফল।");
       }
     } catch (e: any) {
-      showPopup('FAILED', `আপডেট ব্যর্থ: ${e.message}`);
+      showPopup('FAILED', `ব্যর্থ: ${e.message}`);
     }
   };
 
@@ -225,9 +228,9 @@ const App: React.FC = () => {
       const { data, error: sError } = await supabase.from('app_settings').upsert([{ id: 1, ...settings, ...newSettings }]).select().single();
       if (sError) throw sError;
       if (data) setSettings(data);
-      showPopup('SUCCESS', "সেটিংস সেভ হয়েছে।");
+      showPopup('SUCCESS', "সেটিংস আপডেট হয়েছে।");
     } catch (e: any) {
-      showPopup('FAILED', "সেটিংস আপডেট ব্যর্থ। টেবিল চেক করুন।");
+      showPopup('FAILED', "সেটিংস আপডেট ব্যর্থ।");
     }
   };
 
@@ -251,8 +254,7 @@ const App: React.FC = () => {
     return (
       <div className="max-w-md mx-auto min-h-screen bg-blue-900 flex flex-col items-center justify-center p-10">
         <Loader2 className="w-16 h-16 text-white animate-spin mb-6" />
-        <h1 className="text-2xl font-black text-white tracking-widest uppercase">Trust Telecom</h1>
-        <p className="text-blue-200 mt-2 font-bold italic tracking-wider animate-pulse">সংযুক্তি স্থাপন করা হচ্ছে...</p>
+        <h1 className="text-2xl font-black text-white uppercase tracking-widest">Trust Telecom</h1>
       </div>
     );
   }
